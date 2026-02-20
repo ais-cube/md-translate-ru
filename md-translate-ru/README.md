@@ -21,7 +21,7 @@
 ### 1. Установка
 
 ```bash
-git clone https://github.com/<your-username>/md-translate-ru.git
+git clone https://github.com/ais-cube/md-translate-ru.git
 cd md-translate-ru
 pip install -r requirements.txt
 ```

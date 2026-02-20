@@ -26,11 +26,9 @@ git init
 git add -A
 git commit -m "Initial release: MD Translate RU v1.0.0"
 git branch -M main
-git remote add origin https://github.com/<YOUR_USERNAME>/md-translate-ru.git
+git remote add origin https://github.com/ais-cube/md-translate-ru.git
 git push -u origin main
 ```
-
-Замени `<YOUR_USERNAME>` на свой логин GitHub (например, `densmirnov`).
 
 ### 4. Добавить тэг релиза
 
@@ -41,7 +39,7 @@ git push origin v1.0.0
 
 ### 5. Создать Release на GitHub (опционально)
 
-1. Зайди на `https://github.com/<YOUR_USERNAME>/md-translate-ru/releases/new`
+1. Зайди на `https://github.com/ais-cube/md-translate-ru/releases/new`
 2. Tag: `v1.0.0`
 3. Title: `v1.0.0 - Initial Release`
 4. Описание:
@@ -71,7 +69,7 @@ cd md-translate-ru
 git init && git add -A && git commit -m "Initial release: MD Translate RU v1.0.0"
 git branch -M main
 
-gh repo create md-translate-ru --public --description "Автоматический переводчик Markdown EN->RU через Claude API" --source=. --push
+gh repo create ais-cube/md-translate-ru --public --description "Автоматический переводчик Markdown EN->RU через Claude API" --source=. --push
 
 git tag -a v1.0.0 -m "v1.0.0: Initial release"
 git push origin v1.0.0
