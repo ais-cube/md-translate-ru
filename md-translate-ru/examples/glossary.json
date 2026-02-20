@@ -1,0 +1,32 @@
+[
+  {
+    "term_en": "Prompt",
+    "term_ru": "промпт",
+    "definition": "User-provided input given to an AI model to elicit a response.",
+    "rationale": "Established transliteration in Russian AI community."
+  },
+  {
+    "term_en": "Context Window",
+    "term_ru": "контекстное окно",
+    "definition": "Maximum number of tokens an AI model can process at once.",
+    "rationale": "Standard LLM term."
+  },
+  {
+    "term_en": "Fine-tuning",
+    "term_ru": "дообучение",
+    "definition": "Process of further training a pre-trained model on a specific dataset.",
+    "rationale": "Standard ML term in Russian."
+  },
+  {
+    "term_en": "Hallucination",
+    "term_ru": "галлюцинация",
+    "definition": "When an AI model generates plausible but factually incorrect output.",
+    "rationale": "Direct calque, widely adopted."
+  },
+  {
+    "term_en": "Retrieval-Augmented Generation",
+    "term_ru": "генерация с дополнением извлечением (RAG)",
+    "definition": "Technique combining information retrieval with text generation.",
+    "rationale": "Descriptive translation with preserved acronym."
+  }
+]
