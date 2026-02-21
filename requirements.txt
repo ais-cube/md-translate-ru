@@ -5,3 +5,7 @@ markdown>=3.5.0
 pymdown-extensions>=10.0
 python-docx>=1.0.0
 pdfplumber>=0.10.0
+
+# Optional: Google Docs upload
+# google-auth-oauthlib>=1.0.0
+# google-api-python-client>=2.100.0

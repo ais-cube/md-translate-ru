@@ -39,6 +39,10 @@ docs_ru/
 # User config (saved language preferences)
 .run_config.json
 
+# Google Docs credentials (NEVER commit!)
+credentials.json
+.gdocs_token.json
+
 # Fonts - tracked in repo
 !fonts/*.ttf
 !fonts/README.md

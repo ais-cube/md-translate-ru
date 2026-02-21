@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0] - 2026-02-21
+
+### Добавлено
+
+- **Google Docs выгрузка** - переведенный DOCX автоматически загружается в Google Docs:
+  - Два способа авторизации: OAuth2 (браузер) и Service Account (JSON-ключ, без браузера)
+  - Интерактивный выбор папки Google Drive с листингом последних 20 папок
+  - Ручной ввод folder ID из URL
+  - CLI: `--format gdocs` или `--format all+gdocs` + `--gdocs-folder FOLDER_ID`
+  - Ссылка на созданный документ в итоговом отчете
+  - Service Account проверяется первым, затем OAuth2
+- Форматы в меню: "7 = Все + Google Docs", "8 = Google Docs (+ DOCX)"
+- Проверка готовности Google Docs с подробной инструкцией настройки
+
+### Зависимости (опциональные)
+
+- `google-auth-oauthlib` - для OAuth2 авторизации
+- `google-api-python-client` - для Google Drive API
+
 ## [1.4.2] - 2026-02-21
 
 ### Добавлено

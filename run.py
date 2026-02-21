@@ -199,6 +199,18 @@ UI_STRINGS = {
         "ru": "Только MD",
         "en": "MD only",
     },
+    "fmt_all_gdocs": {
+        "ru": "Все + Google Docs",
+        "en": "All + Google Docs",
+    },
+    "fmt_gdocs_only": {
+        "ru": "Google Docs (+ DOCX)",
+        "en": "Google Docs (+ DOCX)",
+    },
+    "gdocs_not_ready": {
+        "ru": "Google Docs недоступен",
+        "en": "Google Docs not available",
+    },
 
     # === Выход ===
     "output_name": {
@@ -404,6 +416,30 @@ UI_STRINGS = {
         "ru": "markdown-разметка восстановлена",
         "en": "markdown formatting repaired",
     },
+    "gdocs_folder_q": {
+        "ru": "Куда загрузить в Google Drive?",
+        "en": "Where to upload on Google Drive?",
+    },
+    "gdocs_root": {
+        "ru": "Корень диска",
+        "en": "Drive root",
+    },
+    "gdocs_manual_id": {
+        "ru": "Ввести ID папки вручную",
+        "en": "Enter folder ID manually",
+    },
+    "gdocs_enter_id": {
+        "ru": "ID папки (из URL)",
+        "en": "Folder ID (from URL)",
+    },
+    "gdocs_uploading": {
+        "ru": "Загрузка в Google Docs",
+        "en": "Uploading to Google Docs",
+    },
+    "gdocs_done": {
+        "ru": "Google Docs",
+        "en": "Google Docs",
+    },
 }
 
 # Current UI language
@@ -444,6 +480,7 @@ except ImportError:
 # Google Drive / Docs integration (optional)
 try:
     from google.oauth2.credentials import Credentials
+    from google.oauth2 import service_account as google_service_account
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request as GoogleAuthRequest
     from googleapiclient.discovery import build as google_build
@@ -498,6 +535,12 @@ GLOSSARY_PATH = ROOT / "glossary.json"
 GLOSSARY_CANDIDATES_PATH = ROOT / "glossary_candidates.json"
 TRANSLATE_SPEC = ROOT / "TRANSLATE.md"
 HUMANIZER_SPEC = ROOT / "HUMANIZER.md"
+
+# Google Docs / Drive
+GDOCS_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+GDOCS_CREDENTIALS_PATH = ROOT / "credentials.json"     # OAuth2 client secrets
+GDOCS_TOKEN_PATH = ROOT / "token.json"                  # OAuth2 saved token
+GDOCS_SERVICE_ACCOUNT_PATH = ROOT / "service_account.json"  # Service Account key
 
 # ---------------------------------------------------------------------------
 # Settings
@@ -1775,6 +1818,214 @@ def generate_docx(md_text: str, output_path: Path, title: str):
     doc.save(str(output_path))
 
 
+# ---------------------------------------------------------------------------
+# Google Docs - upload DOCX and convert
+# ---------------------------------------------------------------------------
+
+GDOCS_SETUP_MSG = {
+    "ru": """
+  Для выгрузки в Google Docs нужна настройка (один раз):
+
+  Способ A - OAuth2 (рекомендуется для личного использования):
+  1. Откройте https://console.cloud.google.com/apis/credentials
+  2. Создайте проект (или выберите существующий)
+  3. Включите Google Drive API: APIs & Services -> Library -> Google Drive API -> Enable
+  4. Создайте OAuth 2.0 Client ID: Credentials -> Create Credentials -> OAuth client ID
+     - Application type: Desktop app
+     - Скачайте JSON и сохраните как credentials.json в папку md-translate-ru
+  5. При первом запуске откроется браузер для авторизации
+
+  Способ B - Service Account (для автоматизации без браузера):
+  1. Откройте https://console.cloud.google.com/iam-admin/serviceaccounts
+  2. Создайте Service Account -> Create Key -> JSON
+  3. Сохраните как service_account.json в папку md-translate-ru
+  4. Расшарьте нужную папку Google Drive на email сервисного аккаунта
+
+  pip install google-auth-oauthlib google-api-python-client
+""",
+    "en": """
+  To upload to Google Docs, one-time setup is needed:
+
+  Method A - OAuth2 (recommended for personal use):
+  1. Open https://console.cloud.google.com/apis/credentials
+  2. Create a project (or select existing)
+  3. Enable Google Drive API: APIs & Services -> Library -> Google Drive API -> Enable
+  4. Create OAuth 2.0 Client ID: Credentials -> Create Credentials -> OAuth client ID
+     - Application type: Desktop app
+     - Download JSON and save as credentials.json in md-translate-ru folder
+  5. On first run, a browser window will open for authorization
+
+  Method B - Service Account (for automation without browser):
+  1. Open https://console.cloud.google.com/iam-admin/serviceaccounts
+  2. Create Service Account -> Create Key -> JSON
+  3. Save as service_account.json in md-translate-ru folder
+  4. Share the target Google Drive folder with the service account email
+
+  pip install google-auth-oauthlib google-api-python-client
+""",
+}
+
+
+def _get_gdocs_credentials():
+    """Get valid Google credentials. Tries Service Account first, then OAuth2."""
+    # Method B: Service Account (no browser needed)
+    if GDOCS_SERVICE_ACCOUNT_PATH.exists():
+        try:
+            creds = google_service_account.Credentials.from_service_account_file(
+                str(GDOCS_SERVICE_ACCOUNT_PATH), scopes=GDOCS_SCOPES
+            )
+            log("  Google Auth: Service Account", "OK")
+            return creds
+        except Exception as e:
+            log(f"  Service Account error: {e}", "WARN")
+
+    # Method A: OAuth2 (opens browser on first run)
+    creds = None
+
+    if GDOCS_TOKEN_PATH.exists():
+        try:
+            creds = Credentials.from_authorized_user_file(str(GDOCS_TOKEN_PATH), GDOCS_SCOPES)
+        except Exception:
+            creds = None
+
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(GoogleAuthRequest())
+        except Exception:
+            creds = None
+
+    if not creds or not creds.valid:
+        if not GDOCS_CREDENTIALS_PATH.exists():
+            return None
+        flow = InstalledAppFlow.from_client_secrets_file(str(GDOCS_CREDENTIALS_PATH), GDOCS_SCOPES)
+        creds = flow.run_local_server(port=0)
+        log("  Google Auth: OAuth2 (browser)", "OK")
+
+    GDOCS_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+    return creds
+
+
+def check_gdocs_ready() -> tuple[bool, str]:
+    """Check if Google Docs upload is available. Returns (ready, message)."""
+    if not HAS_GOOGLE:
+        return False, "pip install google-auth-oauthlib google-api-python-client"
+    if not GDOCS_CREDENTIALS_PATH.exists() and not GDOCS_SERVICE_ACCOUNT_PATH.exists():
+        msg = GDOCS_SETUP_MSG.get(_ui_lang, GDOCS_SETUP_MSG["en"])
+        return False, msg.strip()
+    return True, ""
+
+
+def _list_gdocs_folders(service) -> list[dict]:
+    """List recent folders from Google Drive."""
+    try:
+        result = service.files().list(
+            q="mimeType='application/vnd.google-apps.folder' and trashed=false",
+            spaces="drive",
+            fields="files(id, name, modifiedTime)",
+            orderBy="modifiedTime desc",
+            pageSize=20,
+        ).execute()
+        return result.get("files", [])
+    except Exception as e:
+        log(f"  Google Drive folder list error: {e}", "WARN")
+        return []
+
+
+def ask_gdocs_folder(service) -> str | None:
+    """Interactive folder selection. Returns folder_id or None for root."""
+    folders = _list_gdocs_folders(service)
+
+    if HAS_RICH:
+        console.print()
+        console.print(f"  [bold cyan]{t('gdocs_folder_q')}[/]")
+        console.print()
+        console.print(f"  [bold cyan] 0[/]  [green]{t('gdocs_root')}[/]  (My Drive)")
+        console.print(f"  [bold cyan] 1[/]  [yellow]{t('gdocs_manual_id')}[/]")
+        for i, f in enumerate(folders, 2):
+            console.print(f"  [bold cyan]{i:2d}[/]  {f['name']}")
+        console.print()
+        choice = Prompt.ask(t("choice"), default="0")
+    else:
+        print(f"\n  {t('gdocs_folder_q')}")
+        print(f"  0 = {t('gdocs_root')} (My Drive)")
+        print(f"  1 = {t('gdocs_manual_id')}")
+        for i, f in enumerate(folders, 2):
+            print(f"  {i} = {f['name']}")
+        choice = input(f"\n  {t('choice')} [0]: ").strip() or "0"
+
+    if choice == "0":
+        return None  # root
+
+    if choice == "1":
+        # Manual folder ID
+        if HAS_RICH:
+            folder_id = Prompt.ask(f"  {t('gdocs_enter_id')}")
+        else:
+            folder_id = input(f"  {t('gdocs_enter_id')}: ").strip()
+        return folder_id.strip() if folder_id.strip() else None
+
+    try:
+        idx = int(choice)
+        if 2 <= idx < 2 + len(folders):
+            selected = folders[idx - 2]
+            log(f"  -> {selected['name']}", "OK")
+            return selected["id"]
+    except (ValueError, IndexError):
+        pass
+
+    return None  # fallback to root
+
+
+def upload_to_gdocs(docx_path: Path, title: str, folder_id: str = None) -> str:
+    """Upload DOCX to Google Drive with conversion to Google Docs.
+
+    Args:
+        docx_path: Path to the .docx file
+        title: Document title in Google Docs
+        folder_id: Optional Google Drive folder ID
+
+    Returns:
+        URL of created Google Docs document
+    """
+    if not HAS_GOOGLE:
+        raise RuntimeError("Google API libraries not installed. "
+                           "Run: pip install google-auth-oauthlib google-api-python-client")
+
+    creds = _get_gdocs_credentials()
+    if not creds:
+        raise RuntimeError(f"credentials.json not found in {ROOT}")
+
+    service = google_build("drive", "v3", credentials=creds)
+
+    # Ask user for folder if not specified
+    if folder_id is None and sys.stdin.isatty():
+        folder_id = ask_gdocs_folder(service)
+
+    file_metadata = {
+        "name": title,
+        "mimeType": "application/vnd.google-apps.document",  # convert to Docs
+    }
+    if folder_id:
+        file_metadata["parents"] = [folder_id]
+
+    media = MediaFileUpload(
+        str(docx_path),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        resumable=True,
+    )
+
+    log(f"  {t('gdocs_uploading')}...", "INFO")
+
+    file = service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields="id, webViewLink",
+    ).execute()
+
+    url = file.get("webViewLink", f"https://docs.google.com/document/d/{file['id']}/edit")
+    return url
+
+
 def generate_outputs(md_text: str, output_dir: Path, base_name: str,
                      title: str, formats: list[str],
                      lang_pair: str = "en-ru") -> dict:
@@ -1874,6 +2125,7 @@ def interactive_menu() -> dict:
         "dry_run": False,
         "batch": False,
         "model": None,
+        "gdocs_folder_id": None,
     }
 
     if HAS_RICH:
@@ -2034,13 +2286,28 @@ def interactive_menu() -> dict:
             ("4", t("fmt_docx_only"), ["docx"]),
             ("5", t("fmt_pdf_html"), ["pdf", "html"]),
             ("6", t("fmt_md_only"), ["md"]),
+            ("7", t("fmt_all_gdocs"), ["md", "html", "pdf", "docx", "gdocs"]),
+            ("8", t("fmt_gdocs_only"), ["docx", "gdocs"]),
         ]
+
+        # Check Google Docs availability
+        gdocs_ok, gdocs_msg = check_gdocs_ready()
+
         for key, label, _ in fmt_options:
-            console.print(f"  [bold cyan]{key}[/]  {label}")
+            if key in ("7", "8") and not gdocs_ok:
+                console.print(f"  [dim]{key}  {label} ({t('gdocs_not_ready')})[/]")
+            else:
+                console.print(f"  [bold cyan]{key}[/]  {label}")
         console.print()
 
-        fmt_choice = Prompt.ask(t("choice"), choices=[f[0] for f in fmt_options], default="1")
+        valid_choices = [f[0] for f in fmt_options]
+        fmt_choice = Prompt.ask(t("choice"), choices=valid_choices, default="1")
         result["formats"] = next(f[2] for f in fmt_options if f[0] == fmt_choice)
+
+        # If gdocs selected but not ready, show setup instructions
+        if "gdocs" in result["formats"] and not gdocs_ok:
+            console.print(f"  [yellow]{gdocs_msg}[/]")
+            result["formats"] = [f for f in result["formats"] if f != "gdocs"]
 
         # ========== 6. ВЫХОДНОЕ ИМЯ ==========
         console.print()
@@ -2110,10 +2377,18 @@ def interactive_menu() -> dict:
 
         print(f"\n{t('step_formats')}:")
         print(f"  1={t('fmt_all')} 2={t('fmt_pdf_docx')} 3={t('fmt_pdf_only')} 4={t('fmt_docx_only')} 5={t('fmt_md_only')}")
+        gdocs_ok, gdocs_msg = check_gdocs_ready()
+        if gdocs_ok:
+            print(f"  6={t('fmt_all_gdocs')} 7={t('fmt_gdocs_only')}")
         fmt_map = {"1": ["md","html","pdf","docx"], "2": ["pdf","docx"],
-                   "3": ["pdf"], "4": ["docx"], "5": ["md"]}
-        result["formats"] = fmt_map.get(input(f"{t('choice')} [1]: ").strip() or "1",
-                                         ["md","html","pdf","docx"])
+                   "3": ["pdf"], "4": ["docx"], "5": ["md"],
+                   "6": ["md","html","pdf","docx","gdocs"], "7": ["docx","gdocs"]}
+        chosen = fmt_map.get(input(f"{t('choice')} [1]: ").strip() or "1",
+                             ["md","html","pdf","docx"])
+        if "gdocs" in chosen and not gdocs_ok:
+            print(f"  {gdocs_msg}")
+            chosen = [f for f in chosen if f != "gdocs"]
+        result["formats"] = chosen
 
         default_name = "translated"
         if len(result["input_files"]) == 1:
@@ -2201,7 +2476,8 @@ def main():
     parser.add_argument("--input", help="File or folder to translate")
     parser.add_argument("--lang", default=None, help="Language pair (en-ru, en-de, ...)")
     parser.add_argument("--budget", type=float, default=None, help="Budget limit USD")
-    parser.add_argument("--format", default=None, help="Formats: all, pdf, docx, html, md")
+    parser.add_argument("--format", default=None, help="Formats: all, pdf, docx, html, md, gdocs, all+gdocs")
+    parser.add_argument("--gdocs-folder", default=None, help="Google Drive folder ID for gdocs upload")
     parser.add_argument("--output", default=None, help="Output filename")
     parser.add_argument("--output-dir", default=None, help="Output folder")
     parser.add_argument("--dry-run", action="store_true", help="Estimate cost only")
@@ -2237,8 +2513,17 @@ def main():
         fmt_map = {
             "all": ["md", "html", "pdf", "docx"],
             "pdf": ["pdf"], "docx": ["docx"], "html": ["html"], "md": ["md"],
+            "gdocs": ["docx", "gdocs"],
+            "all+gdocs": ["md", "html", "pdf", "docx", "gdocs"],
         }
         formats = fmt_map.get(args.format or "all", ["md", "html", "pdf", "docx"])
+
+        # Validate gdocs availability
+        if "gdocs" in formats:
+            gdocs_ok, gdocs_msg = check_gdocs_ready()
+            if not gdocs_ok:
+                log(f"Google Docs: {gdocs_msg}", "WARN")
+                formats = [f for f in formats if f != "gdocs"]
 
         default_name = "translated"
         if len(input_files) == 1:
@@ -2253,6 +2538,7 @@ def main():
             "output_name": args.output or default_name,
             "dry_run": args.dry_run,
             "model": args.model,
+            "gdocs_folder_id": args.gdocs_folder,
         }
 
     input_files = config["input_files"]
@@ -2439,8 +2725,29 @@ def main():
             log(t("fonts_missing"), "WARN")
             config["formats"] = [f for f in config["formats"] if f != "pdf"]
 
+    # Google Docs needs DOCX as source
+    if "gdocs" in config["formats"] and "docx" not in config["formats"]:
+        config["formats"].append("docx")
+
     gen_results = generate_outputs(assembled_md, output_dir, base_name,
                                     title, config["formats"], lang_pair)
+
+    # ----- STEP 5 (optional): Google Docs upload -----
+    if "gdocs" in config["formats"]:
+        docx_path = output_dir / f"{base_name}.docx"
+        if docx_path.exists():
+            try:
+                gdocs_url = upload_to_gdocs(
+                    docx_path, title,
+                    folder_id=config.get("gdocs_folder_id"),
+                )
+                gen_results["files"].append(("GDOCS", gdocs_url))
+                log(f"  {t('gdocs_done')}: {gdocs_url}", "OK")
+            except Exception as e:
+                gen_results["errors"].append(f"Google Docs: {e}")
+                log(f"  Google Docs: {e}", "ERROR")
+        else:
+            gen_results["errors"].append("Google Docs: DOCX file not generated")
 
     # ========================
     # RESULTS
@@ -2465,7 +2772,10 @@ def main():
         summary.add_row("", "")
         summary.add_row(t("output_folder"), str(output_dir))
         for fmt, path in gen_results["files"]:
-            summary.add_row(f"  {fmt}", path.name)
+            if isinstance(path, Path):
+                summary.add_row(f"  {fmt}", path.name)
+            else:
+                summary.add_row(f"  {fmt}", str(path))
 
         if gen_results["errors"]:
             for err in gen_results["errors"]:
@@ -2477,7 +2787,10 @@ def main():
         print(f"{t('done_title')}: {len(translations)} {t('files_label')}, ${total_cost_actual:.2f}, {format_duration(elapsed)}")
         print(f"{t('output_folder')}: {output_dir}/")
         for fmt, path in gen_results["files"]:
-            print(f"  {fmt}: {path.name}")
+            if isinstance(path, Path):
+                print(f"  {fmt}: {path.name}")
+            else:
+                print(f"  {fmt}: {path}")
         print()
 
 
