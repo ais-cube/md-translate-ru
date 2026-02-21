@@ -396,6 +396,14 @@ UI_STRINGS = {
         "ru": "Переводить alt-текст изображений?",
         "en": "Translate image alt-text?",
     },
+    "md_format_warn": {
+        "ru": "ВНИМАНИЕ: перевод потерял часть markdown-разметки:",
+        "en": "WARNING: translation lost some markdown formatting:",
+    },
+    "md_repaired": {
+        "ru": "markdown-разметка восстановлена",
+        "en": "markdown formatting repaired",
+    },
 }
 
 # Current UI language
@@ -432,6 +440,17 @@ try:
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
+
+# Google Drive / Docs integration (optional)
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+    from googleapiclient.discovery import build as google_build
+    from googleapiclient.http import MediaFileUpload
+    HAS_GOOGLE = True
+except ImportError:
+    HAS_GOOGLE = False
 
 console = Console() if HAS_RICH else None
 
@@ -723,6 +742,44 @@ def build_system_prompt(lang_pair: str, glossary: list) -> str:
     parts.append(f"Ты - профессиональный технический переводчик с {lang_from} на {lang_to}.")
     parts.append("Следуй приведенным ниже правилам ТОЧНО и БЕЗ ОТКЛОНЕНИЙ.\n")
 
+    # Markdown format rules - highest priority
+    parts.append("=" * 60)
+    parts.append("ФОРМАТ ВЫВОДА: MARKDOWN (ОБЯЗАТЕЛЬНО)")
+    parts.append("=" * 60)
+    parts.append("""Ты ОБЯЗАН вернуть результат в формате Markdown. Это значит:
+
+- Заголовки ОБЯЗАТЕЛЬНО начинаются с символов #:
+  # Заголовок уровня 1
+  ## Заголовок уровня 2
+  ### Заголовок уровня 3
+
+- Жирный текст ОБЯЗАТЕЛЬНО обернут в **двойные звездочки**:
+  Это **жирный** текст.
+
+- Курсив ОБЯЗАТЕЛЬНО обернут в *одинарные звездочки*:
+  Это *курсивный* текст.
+
+- Таблицы ОБЯЗАТЕЛЬНО в markdown-формате с |:
+  | Заголовок 1 | Заголовок 2 |
+  |---|---|
+  | Ячейка 1 | Ячейка 2 |
+
+- Списки ОБЯЗАТЕЛЬНО начинаются с - или 1.:
+  - Элемент списка
+  1. Нумерованный элемент
+
+- Блоки кода ОБЯЗАТЕЛЬНО обернуты в ```:
+  ```python
+  code here
+  ```
+
+- Цитаты ОБЯЗАТЕЛЬНО начинаются с >:
+  > Текст цитаты
+
+ЗАПРЕЩЕНО возвращать plain text без markdown-разметки.
+Если в исходнике есть # заголовок - в переводе ДОЛЖЕН быть # заголовок.
+Если в исходнике есть **жирный** - в переводе ДОЛЖЕН быть **жирный**.""")
+
     if TRANSLATE_SPEC.exists():
         spec = TRANSLATE_SPEC.read_text(encoding="utf-8")
         parts.append("=" * 60)
@@ -775,25 +832,44 @@ def build_user_prompt(source_text: str, filename: str, lang_pair: str,
 
 ПРАВИЛА ФОРМАТИРОВАНИЯ (КРИТИЧЕСКИ ВАЖНО):
 
-1. MARKDOWN-СТРУКТУРА: сохрани 1:1 - заголовки (#), списки (-), таблицы (|), code blocks (```), ссылки, изображения.
-2. ЗАГОЛОВКИ: каждый заголовок (#, ##, ###) ровно ОДИН РАЗ, на ОДНОЙ строке. Пример: "## Глава 1: Название".
-   - ЗАПРЕЩЕНО дублировать заголовки.
-   - ЗАПРЕЩЕНО разбивать заголовок на несколько строк.
-3. ТАБЛИЦЫ: сохрани markdown-таблицы как таблицы. Не превращай таблицу в текст. Каждая строка таблицы = строка с |.
-4. ПАРАГРАФЫ: один параграф = один непрерывный блок текста. НЕ разбивай предложения на отдельные строки.
-   - Между параграфами - одна пустая строка.
-   - НЕ добавляй лишних пустых строк.
-   - Длинные предложения НЕ разбивай переносами строк - оставляй одним абзацем.
-5. CODE BLOCKS: НЕ переводи содержимое ``` блоков. Оставь как есть.
-6. URL, идентификаторы, тикеры: НЕ переводи.
-7. Глоссарий: используй ТОЛЬКО канонические термины (если предоставлен).
+1. MARKDOWN-РАЗМЕТКА: выход ОБЯЗАН содержать символы #, ##, ###, **, *, |, -, >, ``` - точно как в исходнике.
+2. ЗАГОЛОВКИ: ОБЯЗАТЕЛЬНО начинай с # (## для разделов, ### для подразделов). Каждый ровно ОДИН РАЗ, на ОДНОЙ строке.
+3. ЖИРНЫЙ ТЕКСТ: если в исходнике есть **bold** - в переводе ОБЯЗАН быть **жирный**.
+4. ТАБЛИЦЫ: сохрани markdown-таблицы с |. Не превращай таблицу в текст.
+5. ПАРАГРАФЫ: один параграф = один блок. НЕ разбивай предложения переносами строк.
+6. CODE BLOCKS: НЕ переводи содержимое ```. Оставь как есть.
+7. URL, идентификаторы: НЕ переводи.
+8. Глоссарий: используй канонические термины (если предоставлен).
 {image_rule}
-9. Содержание (Table of Contents): переведи ОДИН РАЗ, не дублируй.
-10. Иерархия: # = заголовок документа, ## = разделы, ### = подразделы. Сохрани уровни.
+10. Иерархия уровней: # > ## > ### - сохрани как в исходнике.
+
+ПРИМЕР корректного вывода (EN->RU):
+
+Исходник:
+# Introduction
+This document describes **key concepts** of prompt engineering.
+## Chapter 1: Basics
+| Method | Accuracy |
+|---|---|
+| Zero-shot | Low |
+
+Правильный перевод:
+# Введение
+Этот документ описывает **ключевые концепции** prompt engineering.
+## Глава 1: Основы
+| Метод | Точность |
+|---|---|
+| Zero-shot | Низкая |
+
+НЕПРАВИЛЬНЫЙ перевод (БЕЗ разметки - ЗАПРЕЩЕНО):
+Введение
+Этот документ описывает ключевые концепции prompt engineering.
+Глава 1: Основы
+Метод: Zero-shot, Точность: Низкая
 
 ФОРМАТ ВЫВОДА:
-- Верни ТОЛЬКО переведенный Markdown. Без комментариев, без преамбулы, без пост-скриптума.
-- Не оборачивай в ```markdown``` блоки.
+- Верни ТОЛЬКО переведенный Markdown с полной разметкой (#, **, |, -, >, ```).
+- Не оборачивай в ```markdown``` блоки. Без комментариев, без преамбулы.
 
 ---НАЧАЛО ИСХОДНОГО ТЕКСТА---
 
@@ -1093,6 +1169,216 @@ def cleanup_markdown(text: str) -> str:
         result.pop()
 
     return '\n'.join(result) + '\n'
+
+
+def validate_markdown(source: str, translated: str, filename: str) -> list[str]:
+    """Check that translated text preserves markdown formatting from source.
+    Returns list of warning messages."""
+    warnings = []
+
+    # Count markdown elements in source
+    src_headings = len(re.findall(r'^#{1,6}\s', source, re.MULTILINE))
+    src_bold = len(re.findall(r'\*\*[^*]+\*\*', source))
+    src_tables = len(re.findall(r'^\|.+\|$', source, re.MULTILINE))
+    src_lists = len(re.findall(r'^(\s*)([-*+]|\d+\.)\s', source, re.MULTILINE))
+    src_code = len(re.findall(r'^```', source, re.MULTILINE))
+
+    # Count in translation
+    tr_headings = len(re.findall(r'^#{1,6}\s', translated, re.MULTILINE))
+    tr_bold = len(re.findall(r'\*\*[^*]+\*\*', translated))
+    tr_tables = len(re.findall(r'^\|.+\|$', translated, re.MULTILINE))
+    tr_lists = len(re.findall(r'^(\s*)([-*+]|\d+\.)\s', translated, re.MULTILINE))
+    tr_code = len(re.findall(r'^```', translated, re.MULTILINE))
+
+    # Headings: source has them but translation lost most
+    if src_headings > 0 and tr_headings < src_headings * 0.5:
+        warnings.append(
+            f"  {filename}: заголовки (#) - исходник: {src_headings}, перевод: {tr_headings}"
+        )
+
+    # Bold: source has them but translation lost most
+    if src_bold > 2 and tr_bold < src_bold * 0.3:
+        warnings.append(
+            f"  {filename}: жирный (**) - исходник: {src_bold}, перевод: {tr_bold}"
+        )
+
+    # Tables: source has them but translation lost them
+    if src_tables > 2 and tr_tables < src_tables * 0.5:
+        warnings.append(
+            f"  {filename}: таблицы (|) - исходник: {src_tables}, перевод: {tr_tables}"
+        )
+
+    # Code blocks should be equal
+    if src_code > 0 and tr_code < src_code:
+        warnings.append(
+            f"  {filename}: code blocks - исходник: {src_code}, перевод: {tr_code}"
+        )
+
+    return warnings
+
+
+def repair_markdown(source: str, translated: str) -> str:
+    """Restore markdown formatting lost in translation by comparing with source structure.
+
+    Fixes:
+    1. Headings: restores # markers on lines that should be headings
+    2. Bold: restores ** markers where source had them (basic heuristics)
+    """
+    # ----- Phase 1: Repair headings -----
+    # Extract heading structure from source (ordered)
+    src_headings = []  # [(level, text)]
+    for line in source.split('\n'):
+        m = re.match(r'^(#{1,6})\s+(.+)', line.strip())
+        if m:
+            src_headings.append((len(m.group(1)), m.group(2).strip()))
+
+    if not src_headings:
+        return translated  # Source has no headings, nothing to repair
+
+    # Check if translation already has enough headings
+    tr_heading_count = len(re.findall(r'^#{1,6}\s', translated, re.MULTILINE))
+    if tr_heading_count >= len(src_headings) * 0.7:
+        pass  # Skip heading repair
+    else:
+        tr_lines = translated.split('\n')
+
+        # Identify candidate heading lines with quality score
+        candidates = []  # [(line_index, text, score)]
+        for idx, line in enumerate(tr_lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Already a heading - skip
+            if re.match(r'^#{1,6}\s', stripped):
+                continue
+            # Skip formatted lines
+            if stripped.startswith(('|', '>', '!', '`', '```')):
+                continue
+            # Skip list items
+            if re.match(r'^(\s*)([-*+]|\d+\.)\s', line):
+                continue
+
+            # HARD REJECT: headings NEVER end with sentence punctuation
+            if stripped[-1] in '.;,!?':
+                continue
+
+            # HARD REJECT: too long for a heading
+            if len(stripped) > 100:
+                continue
+
+            # HARD REJECT: contains multiple sentences
+            if stripped.count('.') > 0:
+                continue
+
+            # Score the candidate
+            score = 0
+
+            # Length: headings are usually short
+            if len(stripped) <= 40:
+                score += 3
+            elif len(stripped) <= 60:
+                score += 2
+            elif len(stripped) <= 80:
+                score += 1
+
+            # Context: blank line BEFORE (required for headings)
+            has_blank_before = (idx == 0) or (idx > 0 and not tr_lines[idx - 1].strip())
+            if not has_blank_before:
+                continue  # Headings must have blank line before them
+
+            score += 2
+
+            # Context: followed by blank line
+            has_blank_after = (idx == len(tr_lines) - 1) or (
+                idx < len(tr_lines) - 1 and not tr_lines[idx + 1].strip())
+            if has_blank_after:
+                score += 1
+
+            # Only consider strong candidates
+            if score >= 3:
+                candidates.append((idx, stripped, score))
+
+        # Match candidates to source headings in ORDER
+        # Use greedy sequential matching
+        repairs = {}  # line_index -> heading_level
+        src_idx = 0
+
+        for c_idx, c_text, c_score in candidates:
+            if src_idx >= len(src_headings):
+                break
+            # Accept this candidate for the next unmatched source heading
+            repairs[c_idx] = src_headings[src_idx][0]
+            src_idx += 1
+
+        # Apply heading repairs
+        if repairs:
+            for idx, level in repairs.items():
+                stripped = tr_lines[idx].strip()
+                if not re.match(r'^#{1,6}\s', stripped):
+                    tr_lines[idx] = '#' * level + ' ' + stripped
+
+            translated = '\n'.join(tr_lines)
+
+    # ----- Phase 2: Repair bold text (basic) -----
+    src_bold_count = len(re.findall(r'\*\*[^*]+\*\*', source))
+    tr_bold_count = len(re.findall(r'\*\*[^*]+\*\*', translated))
+
+    if src_bold_count > 0 and tr_bold_count < src_bold_count * 0.3:
+        # Try to restore bold at start-of-line patterns: "**Label:** value"
+        src_lines = source.split('\n')
+        tr_lines = translated.split('\n')
+        src_total = max(len(src_lines), 1)
+        tr_total = max(len(tr_lines), 1)
+
+        for s_idx, s_line in enumerate(src_lines):
+            s_stripped = s_line.strip()
+            # Pattern: line starts with **Bold:** or **Bold** -
+            m = re.match(r'^\*\*[^*]+\*\*\s*[:(-]', s_stripped)
+            if not m:
+                # Pattern: "- **Bold** - description"
+                m = re.match(r'^[-*+]\s+\*\*[^*]+\*\*', s_stripped)
+            if not m:
+                continue
+
+            # Find corresponding translation line
+            t_target = int((s_idx / src_total) * tr_total)
+            for offset in range(4):
+                for d in [0, 1, -1]:
+                    check = t_target + offset * d
+                    if 0 <= check < tr_total:
+                        t_line = tr_lines[check]
+                        t_stripped = t_line.strip()
+                        if '**' in t_stripped:
+                            break
+                        if not t_stripped or t_stripped.startswith(('|', '```', '#')):
+                            continue
+
+                        # List item: "- Word - description" -> "- **Word** - description"
+                        list_m = re.match(r'^([-*+]\s+)(\S+(?:\s\S+)?)\s+([-:])\s', t_stripped)
+                        if list_m:
+                            word = list_m.group(2)
+                            sep = list_m.group(3)
+                            old = list_m.group(1) + word
+                            new = list_m.group(1) + '**' + word + '**'
+                            tr_lines[check] = t_line.replace(old, new, 1)
+                            break
+
+                        # Start bold: "Label: value" -> "**Label:** value"
+                        colon_m = re.match(r'^([^:]{2,40}):\s', t_stripped)
+                        if colon_m:
+                            old_part = colon_m.group(1)
+                            if '**' not in old_part:
+                                tr_lines[check] = t_line.replace(
+                                    old_part + ':',
+                                    '**' + old_part + ':**', 1)
+                            break
+                else:
+                    continue
+                break
+
+        translated = '\n'.join(tr_lines)
+
+    return translated
 
 
 def assemble_document(translations: list[dict], title: str = "",
@@ -2113,6 +2399,29 @@ def main():
         return
 
     elapsed = time.time() - start_time
+
+    # ----- MARKDOWN REPAIR -----
+    source_by_name = {f.name: txt for f, txt in zip(input_files, source_texts)}
+    for stats in translations:
+        src = source_by_name.get(stats["file"], "")
+        if src and stats["translated_text"]:
+            repaired = repair_markdown(src, stats["translated_text"])
+            if repaired != stats["translated_text"]:
+                stats["translated_text"] = repaired
+                log(f"  {stats['file']}: markdown-разметка восстановлена", "OK")
+
+    # ----- MARKDOWN VALIDATION -----
+    all_warnings = []
+    for stats in translations:
+        src = source_by_name.get(stats["file"], "")
+        if src and stats["translated_text"]:
+            w = validate_markdown(src, stats["translated_text"], stats["file"])
+            all_warnings.extend(w)
+
+    if all_warnings:
+        log(t("md_format_warn"), "WARN")
+        for w in all_warnings:
+            log(w, "WARN")
 
     # ----- STEP 4 -----
     log(t("step_generate"), "STEP")
