@@ -642,12 +642,234 @@ def show_results(results: list[dict]):
         print()
 
 
+def find_md_folders() -> list[tuple[Path, int]]:
+    """Найти папки с .md файлами рядом со скриптом (до 2 уровней)."""
+    candidates = []
+    skip = {'.git', '__pycache__', 'fonts', 'output', 'node_modules', '.venv', 'venv'}
+
+    def scan_dir(base: Path, depth: int = 0):
+        if depth > 2:
+            return
+        try:
+            for p in sorted(base.iterdir()):
+                if not p.is_dir() or p.name.startswith('.') or p.name in skip:
+                    continue
+                md_files = list(p.glob("*.md"))
+                if md_files:
+                    candidates.append((p, len(md_files)))
+                scan_dir(p, depth + 1)
+        except PermissionError:
+            pass
+
+    scan_dir(ROOT)
+
+    # Также проверить текущую рабочую директорию
+    cwd = Path.cwd()
+    if cwd.resolve() != ROOT.resolve():
+        scan_dir(cwd)
+        # Убрать дубликаты
+        seen = set()
+        unique = []
+        for path, count in candidates:
+            resolved = path.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique.append((path, count))
+        return unique
+
+    return candidates
+
+
+def interactive_menu() -> dict:
+    """Интерактивное меню при запуске без аргументов."""
+    result = {"input_dir": None, "output_dir": None, "formats": None, "file": None}
+
+    if HAS_RICH:
+        from rich.prompt import Prompt, Confirm, IntPrompt
+
+        console.print()
+        console.print(Panel(
+            "[bold cyan]convert.py[/] - генерация PDF + HTML из Markdown\n"
+            "[dim]Конвертирует .md файлы в PDF, HTML или оба формата[/]",
+            title="Конвертер",
+            border_style="cyan",
+        ))
+        console.print()
+
+        # --- Выбор входной папки ---
+        folders = find_md_folders()
+        input_dir = None
+
+        if DEFAULT_INPUT.exists() and list(DEFAULT_INPUT.glob("*.md")):
+            n = len(list(DEFAULT_INPUT.glob("*.md")))
+            console.print(f"  [green]docs_ru/[/] найдена ({n} файлов)")
+            if Confirm.ask("  Использовать docs_ru?", default=True):
+                input_dir = DEFAULT_INPUT
+
+        if input_dir is None and folders:
+            console.print()
+            console.print("[bold]Найдены папки с .md файлами:[/]\n")
+            for i, (folder, count) in enumerate(folders, 1):
+                try:
+                    rel = folder.relative_to(ROOT)
+                except ValueError:
+                    rel = folder
+                console.print(f"  [bold cyan]{i}[/]  {rel}/  [dim]({count} файлов)[/]")
+            console.print(f"  [bold cyan]0[/]  Ввести путь вручную")
+            console.print()
+
+            choice = IntPrompt.ask("Выбор папки", default=1)
+            if 1 <= choice <= len(folders):
+                input_dir = folders[choice - 1][0]
+            else:
+                path_str = Prompt.ask("Путь к папке с .md файлами")
+                p = Path(path_str)
+                if p.exists() and p.is_dir():
+                    input_dir = p
+                else:
+                    log(f"Папка не найдена: {path_str}", "ERROR")
+                    sys.exit(1)
+
+        if input_dir is None:
+            console.print()
+            console.print("[yellow]Папка docs_ru/ не найдена. Не найдены папки с .md файлами рядом.[/]")
+            console.print()
+            path_str = Prompt.ask("Введите путь к папке с .md файлами")
+            p = Path(path_str)
+            if p.exists() and p.is_dir():
+                md_count = len(list(p.glob("*.md")))
+                if md_count == 0:
+                    log(f"В папке {p} нет .md файлов", "ERROR")
+                    sys.exit(1)
+                input_dir = p
+            else:
+                log(f"Папка не найдена: {path_str}", "ERROR")
+                sys.exit(1)
+
+        result["input_dir"] = input_dir.resolve()
+
+        # --- Список файлов и выбор ---
+        md_files = sorted(input_dir.glob("*.md"))
+        console.print()
+        console.print(f"[bold]Файлы в {input_dir.name}/:[/]\n")
+        for i, f in enumerate(md_files, 1):
+            size = f.stat().st_size
+            console.print(f"  [bold]{i:2d}[/]  {f.name}  [dim]{size:,} байт[/]")
+        console.print()
+
+        actions = [
+            ("1", "Конвертировать все файлы", "all_files"),
+            ("2", "Выбрать конкретный файл", "pick"),
+        ]
+        for key, label, _ in actions:
+            console.print(f"  [bold cyan]{key}[/]  {label}")
+        console.print()
+
+        action = Prompt.ask("Выбор", choices=["1", "2"], default="1")
+        if action == "2":
+            idx = IntPrompt.ask("Номер файла", default=1)
+            if 1 <= idx <= len(md_files):
+                result["file"] = md_files[idx - 1].name
+            else:
+                log("Неверный номер", "ERROR")
+                sys.exit(1)
+
+        # --- Выбор формата ---
+        console.print()
+        console.print("[bold]Формат выхода:[/]\n")
+        fmt_options = [
+            ("1", "PDF + HTML + MD (все)", ["md", "html", "pdf"]),
+            ("2", "Только PDF", ["pdf"]),
+            ("3", "Только HTML", ["html"]),
+            ("4", "PDF + HTML (без копии MD)", ["html", "pdf"]),
+        ]
+        for key, label, _ in fmt_options:
+            console.print(f"  [bold cyan]{key}[/]  {label}")
+        console.print()
+
+        fmt_choice = Prompt.ask("Выбор", choices=["1", "2", "3", "4"], default="1")
+        result["formats"] = next(f[2] for f in fmt_options if f[0] == fmt_choice)
+
+        # --- Выходная папка ---
+        default_out = ROOT / "output"
+        console.print()
+        custom_out = Prompt.ask(
+            f"Выходная папка",
+            default=str(default_out),
+        )
+        result["output_dir"] = Path(custom_out).resolve()
+
+    else:
+        # Fallback без Rich
+        print(f"\n{'='*50}")
+        print("convert.py - генерация PDF + HTML из Markdown")
+        print(f"{'='*50}")
+
+        folders = find_md_folders()
+        input_dir = None
+
+        if DEFAULT_INPUT.exists() and list(DEFAULT_INPUT.glob("*.md")):
+            n = len(list(DEFAULT_INPUT.glob("*.md")))
+            use = input(f"Использовать docs_ru/ ({n} файлов)? [Y/n]: ").strip().lower()
+            if use in ("", "y", "yes", "д", "да"):
+                input_dir = DEFAULT_INPUT
+
+        if input_dir is None and folders:
+            print("\nНайдены папки с .md файлами:")
+            for i, (folder, count) in enumerate(folders, 1):
+                print(f"  {i}. {folder.name}/ ({count} файлов)")
+            print(f"  0. Ввести путь вручную")
+            choice = input("Выбор [1]: ").strip() or "1"
+            try:
+                idx = int(choice)
+                if 1 <= idx <= len(folders):
+                    input_dir = folders[idx - 1][0]
+            except ValueError:
+                pass
+
+        if input_dir is None:
+            path_str = input("Путь к папке с .md файлами: ").strip()
+            p = Path(path_str)
+            if p.exists() and p.is_dir():
+                input_dir = p
+            else:
+                print(f"ОШИБКА: папка не найдена: {path_str}")
+                sys.exit(1)
+
+        result["input_dir"] = input_dir.resolve()
+
+        # Файлы
+        md_files = sorted(input_dir.glob("*.md"))
+        print(f"\nФайлы ({len(md_files)}):")
+        for i, f in enumerate(md_files, 1):
+            print(f"  {i:2d}. {f.name}")
+
+        action = input("\n1=все, 2=выбрать файл [1]: ").strip() or "1"
+        if action == "2":
+            idx = int(input("Номер: ") or "1")
+            if 1 <= idx <= len(md_files):
+                result["file"] = md_files[idx - 1].name
+
+        # Формат
+        print("\nФормат: 1=все, 2=PDF, 3=HTML, 4=PDF+HTML")
+        fmt = input("Выбор [1]: ").strip() or "1"
+        fmt_map = {"1": ["md", "html", "pdf"], "2": ["pdf"], "3": ["html"], "4": ["html", "pdf"]}
+        result["formats"] = fmt_map.get(fmt, ["md", "html", "pdf"])
+
+        # Выход
+        default_out = str(ROOT / "output")
+        out = input(f"Выходная папка [{default_out}]: ").strip() or default_out
+        result["output_dir"] = Path(out).resolve()
+
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Конвертер Markdown в PDF + HTML",
         epilog="""
 Примеры:
-  python convert.py                        # все файлы, все форматы
+  python convert.py                        # интерактивный режим
   python convert.py --file 01_Intro.md     # конкретный файл
   python convert.py --format pdf           # только PDF
   python convert.py --format html          # только HTML
@@ -655,34 +877,50 @@ def main():
         """
     )
     parser.add_argument("--file", help="Конвертировать конкретный файл")
-    parser.add_argument("--format", choices=["pdf", "html", "md", "all"], default="all",
+    parser.add_argument("--format", choices=["pdf", "html", "md", "all"], default=None,
                         help="Формат выхода (по умолчанию: all)")
     parser.add_argument("--input", default=None,
                         help=f"Входная папка с .md файлами (по умолчанию: docs_ru)")
     parser.add_argument("--output-dir", default=None,
                         help="Выходная папка (по умолчанию: output)")
+    parser.add_argument("--no-interactive", action="store_true",
+                        help="Отключить интерактивный режим")
 
     args = parser.parse_args()
 
-    input_dir = Path(args.input).resolve() if args.input else DEFAULT_INPUT
-    output_dir = Path(args.output_dir).resolve() if args.output_dir else ROOT / "output"
+    # --- Интерактивный режим ---
+    is_interactive = (
+        not args.no_interactive
+        and args.input is None
+        and args.format is None
+        and args.file is None
+        and sys.stdin.isatty()
+    )
 
-    if args.format == "all":
-        formats = ["md", "html", "pdf"]
+    if is_interactive:
+        menu = interactive_menu()
+        input_dir = menu["input_dir"]
+        output_dir = menu["output_dir"]
+        formats = menu["formats"]
+        specific_file = menu.get("file")
     else:
-        formats = [args.format]
+        input_dir = Path(args.input).resolve() if args.input else DEFAULT_INPUT
+        output_dir = Path(args.output_dir).resolve() if args.output_dir else ROOT / "output"
+        formats = ["md", "html", "pdf"] if args.format is None or args.format == "all" else [args.format]
+        specific_file = args.file
 
-    # Приветствие
-    if HAS_RICH:
-        console.print()
-        console.print(Panel(
-            "[bold cyan]convert.py[/] - генерация PDF + HTML из переведенных Markdown\n"
-            f"[dim]Вход: {input_dir} | Выход: {output_dir} | Форматы: {', '.join(formats)}[/]",
-            title="Конвертер",
-            border_style="cyan",
-        ))
-    else:
-        print(f"\nКонвертер: {input_dir} -> {output_dir} [{', '.join(formats)}]")
+    # Приветствие (только в неинтерактивном режиме - в интерактивном уже показали)
+    if not is_interactive:
+        if HAS_RICH:
+            console.print()
+            console.print(Panel(
+                "[bold cyan]convert.py[/] - генерация PDF + HTML из переведенных Markdown\n"
+                f"[dim]Вход: {input_dir} | Выход: {output_dir} | Форматы: {', '.join(formats)}[/]",
+                title="Конвертер",
+                border_style="cyan",
+            ))
+        else:
+            print(f"\nКонвертер: {input_dir} -> {output_dir} [{', '.join(formats)}]")
 
     # Проверка шрифтов
     if "pdf" in formats:
@@ -695,7 +933,7 @@ def main():
         log(f"Шрифты: {FONT_DIR} ({len(list(FONT_DIR.glob('*.ttf')))} файлов)")
 
     # Получить файлы
-    files = get_md_files(input_dir, args.file)
+    files = get_md_files(input_dir, specific_file)
     if not files:
         return
 

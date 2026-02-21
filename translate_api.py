@@ -85,7 +85,7 @@ CHUNK_SIZE_CHARS = 40000
 COST_INPUT_PER_M = 3.0
 COST_OUTPUT_PER_M = 15.0
 
-# Средняя скорость перевода (секунд на 1000 символов) — эмпирическая оценка
+# Средняя скорость перевода (секунд на 1000 символов) - эмпирическая оценка
 AVG_SECONDS_PER_1K_CHARS = 3.5
 
 # ---------------------------------------------------------------------------
@@ -96,15 +96,15 @@ _interrupted = False
 def _signal_handler(signum, frame):
     global _interrupted
     if _interrupted:
-        # Повторный Ctrl+C — аварийный выход
+        # Повторный Ctrl+C - аварийный выход
         ui_print("\n[bold red]Принудительный выход.[/]" if HAS_RICH else "\nПринудительный выход.")
         sys.exit(1)
     _interrupted = True
     ui_print(
-        "\n[yellow]⏸  Ctrl+C — перевод остановится после текущего файла. "
+        "\n[yellow]⏸  Ctrl+C - перевод остановится после текущего файла. "
         "Нажмите ещё раз для немедленного выхода.[/]"
         if HAS_RICH else
-        "\nCtrl+C — остановка после текущего файла. Ещё раз — выход."
+        "\nCtrl+C - остановка после текущего файла. Ещё раз - выход."
     )
 
 signal.signal(signal.SIGINT, _signal_handler)
@@ -307,7 +307,7 @@ def split_into_chunks(text: str, max_chars: int = CHUNK_SIZE_CHARS) -> list[str]
 
 
 # ---------------------------------------------------------------------------
-# Forecast — прогноз стоимости и времени
+# Forecast - прогноз стоимости и времени
 # ---------------------------------------------------------------------------
 
 def forecast_files(files: list[Path], system_prompt_tokens: int) -> list[dict]:
@@ -401,7 +401,7 @@ def show_forecast_table(forecasts: list[dict], budget: float | None = None):
             ))
     else:
         print(f"\n{'='*70}")
-        print(f"ПРОГНОЗ ПЕРЕВОДА — {len(forecasts)} файлов")
+        print(f"ПРОГНОЗ ПЕРЕВОДА - {len(forecasts)} файлов")
         print(f"{'='*70}")
         for i, fc in enumerate(forecasts, 1):
             print(f"  {i:2d}. {fc['name']:<28s}  {fc['chars']:>8,} симв  "
@@ -411,9 +411,9 @@ def show_forecast_table(forecasts: list[dict], budget: float | None = None):
         print(f"  ИТОГО: {total_chars:,} символов, {format_duration(total_time)}, ${total_cost:.2f}")
         if budget is not None:
             if total_cost > budget:
-                print(f"  ⚠ БЮДЖЕТ ${budget:.2f} — НЕ ХВАТАЕТ ${total_cost - budget:.2f}")
+                print(f"  ⚠ БЮДЖЕТ ${budget:.2f} - НЕ ХВАТАЕТ ${total_cost - budget:.2f}")
             else:
-                print(f"  ✓ Бюджет ${budget:.2f} — остаток ${budget - total_cost:.2f}")
+                print(f"  ✓ Бюджет ${budget:.2f} - остаток ${budget - total_cost:.2f}")
         print()
 
 
@@ -427,7 +427,7 @@ def interactive_menu(files_all: list[Path], files_new: list[Path]) -> dict:
     if HAS_RICH:
         console.print()
         console.print(Panel(
-            "[bold cyan]md-translate-ru[/] — переводчик Markdown EN→RU через Claude API\n"
+            "[bold cyan]md-translate-ru[/] - переводчик Markdown EN→RU через Claude API\n"
             f"[dim]Найдено файлов: {len(files_all)} всего, {len(files_new)} непереведённых[/]",
             title="🌐 Переводчик",
             border_style="cyan",
@@ -498,7 +498,7 @@ def interactive_menu(files_all: list[Path], files_new: list[Path]) -> dict:
     else:
         # Fallback без Rich
         print(f"\n{'='*50}")
-        print("md-translate-ru — переводчик Markdown EN→RU")
+        print("md-translate-ru - переводчик Markdown EN→RU")
         print(f"Файлов: {len(files_all)} всего, {len(files_new)} непереведённых")
         print(f"{'='*50}")
         print("  1. Перевести непереведённые")
@@ -552,7 +552,7 @@ def confirm_start(forecasts: list[dict], budget: float | None, is_batch: bool = 
         console.print(f"  Режим: [bold]{mode}[/]")
         if is_batch:
             console.print(f"  Стоимость Batch: [bold green]≈${total_cost / 2:.2f}[/]")
-        console.print(f"  [dim]Ctrl+C — остановить после текущего файла[/]\n")
+        console.print(f"  [dim]Ctrl+C - остановить после текущего файла[/]\n")
         return Confirm.ask("Запустить перевод?", default=True)
     else:
         print(f"  Режим: {mode}")

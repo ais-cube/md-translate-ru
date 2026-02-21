@@ -1,0 +1,42 @@
+[
+  {
+    "filename": "page-01",
+    "size_bytes": 324832,
+    "alt_text": "GLM-5: from Vibe Coding to Agentic Engineering\nGLM-5 Team\nZhipu AI & Tsinghua University\n(For the complete list of authors, please refer to the Contribution section)\nAbstract\nWe present GLM-5, a next-",
+    "input_tokens": 2175,
+    "output_tokens": 3239,
+    "status": "ok"
+  },
+  {
+    "filename": "page-02",
+    "size_bytes": 651352,
+    "alt_text": "Figure 2: Artificial Analysis Intelligence Index v4.0 incorporates 10 evaluations: GDPval-AA, τ 2-\nBench Telecom, Terminal-Bench Hard, SciCode, AA-LCR, AA-Omniscience, IFBench, Humanity’s\nLast Exam, G",
+    "input_tokens": 2187,
+    "output_tokens": 1377,
+    "status": "ok"
+  },
+  {
+    "filename": "page-03",
+    "size_bytes": 548049,
+    "alt_text": "Figure 3: On LMArena, GLM-5 is the #1 open model in both Text Arena and Code Arena.\nFigure 4: Results on several long-horizon tasks. Left: Vending-Bench 2; Right: CC-Bench-V2.\nplanning and resource ma",
+    "input_tokens": 2178,
+    "output_tokens": 3076,
+    "status": "ok"
+  },
+  {
+    "filename": "page-20",
+    "size_bytes": 709788,
+    "alt_text": "4.2.5\nSlide Generation\nWe employ a self-improving pipeline that aims to systematically enhance slide generation perfor-\nmance by training a specialized slide-generation expert through reinforcement le",
+    "input_tokens": 2153,
+    "output_tokens": 1018,
+    "status": "ok"
+  },
+  {
+    "filename": "page-25",
+    "size_bytes": 451596,
+    "alt_text": "Table 8: CC-Bench-V2 evaluation results across frontend, backend, and long-horizon tasks. BSR:\nBuild Success Rate; ISR: Instance Success Rate; CSR: Check-item Success Rate.\nCategory\nTask\nMetric\nGLM-5\n",
+    "input_tokens": 2170,
+    "output_tokens": 3041,
+    "status": "ok"
+  }
+]
