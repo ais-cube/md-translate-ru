@@ -4,16 +4,27 @@
 
 ### Добавлено
 
+- **Единый пайплайн** (`run.py`) - одна команда: документ на входе -> перевод -> все форматы на выходе
+  - Поддержка входных форматов: .md, .docx, .pdf
+  - Выбор языка перевода: 11 языковых пар (EN-RU, RU-EN, EN-DE, EN-ES, EN-FR, EN-ZH, EN-JA и др.)
+  - Интерактивное меню с пошаговой настройкой
+  - Прогноз стоимости и времени перед запуском
+  - Генерация DOCX через python-docx (заголовки, таблицы, списки, code blocks)
+  - Сборка нескольких файлов в один выходной документ
 - **Мульти-формат выход** (`convert.py`) - генерация PDF + HTML + MD из переведенных файлов
 - **Локальные шрифты** (`fonts/`) - DejaVu Sans, DejaVu Sans Mono, Liberation Sans с полной кириллицей
 - PDF-генератор с поддержкой заголовков, таблиц, code blocks, списков, цитат
 - HTML-генератор с адаптивным дизайном и print-friendly стилями
-- Скрипт `convert.py` работает автономно: `--format pdf|html|md|all`, `--file`, `--input`, `--output-dir`
+- Интерактивное меню в `convert.py` (автопоиск папок, выбор формата)
 
 ### Изменено
 
-- `requirements.txt` - добавлены `fpdf2`, `markdown`, `pymdown-extensions`
+- `requirements.txt` - добавлены `fpdf2`, `markdown`, `pymdown-extensions`, `python-docx`, `pdfplumber`
 - `.gitignore` - добавлены `output/`, `docs_ru/`, сохранены шрифты
+
+### Исправлено
+
+- Batch API: sanitize custom_id (убраны точки и спецсимволы)
 
 ## [1.2.0] - 2026-02-20
 
