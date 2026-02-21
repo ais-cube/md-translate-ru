@@ -666,7 +666,9 @@ def create_batch_requests(system_prompt: str, files: list[Path]) -> list[dict]:
                 chunk, filename,
                 is_chunk=is_chunked, chunk_num=i, total_chunks=len(chunks)
             )
-            custom_id = f"{filename}__chunk_{i}_of_{len(chunks)}"
+            custom_id = f"{source_path.stem}__chunk_{i}_of_{len(chunks)}"
+            # Sanitize: только a-zA-Z0-9_- , макс 64 символа
+            custom_id = re.sub(r'[^a-zA-Z0-9_-]', '_', custom_id)[:64]
             requests.append({
                 "custom_id": custom_id,
                 "params": {
