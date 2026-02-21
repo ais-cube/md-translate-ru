@@ -756,7 +756,8 @@ def build_system_prompt(lang_pair: str, glossary: list) -> str:
 
 def build_user_prompt(source_text: str, filename: str, lang_pair: str,
                       is_chunk: bool = False, chunk_num: int = 0,
-                      total_chunks: int = 0) -> str:
+                      total_chunks: int = 0,
+                      translate_images: bool = False) -> str:
     """Построить пользовательский промпт для перевода."""
     lang_from, lang_to, lang_from_en, lang_to_en = LANGUAGES.get(lang_pair, LANGUAGES["en-ru"])
 
@@ -764,27 +765,41 @@ def build_user_prompt(source_text: str, filename: str, lang_pair: str,
     if is_chunk:
         chunk_info = f"\n\nЭто чанк {chunk_num}/{total_chunks}. Переводи только этот фрагмент."
 
+    image_rule = ("8. Изображения ![alt](path) - ПЕРЕВЕДИ alt-text, путь оставь без изменений."
+                  if translate_images else
+                  "8. Изображения ![alt](path) - оставь ПОЛНОСТЬЮ как есть, включая alt-text и путь.")
+
     return f"""Переведи следующий документ с {lang_from} на {lang_to}.
 
 Файл: {filename}{chunk_info}
 
-КРИТИЧЕСКИ ВАЖНО:
-1. Сохрани структуру Markdown 1:1 (заголовки, списки, таблицы, code blocks, ссылки, изображения).
-2. НЕ переводи: code blocks, URL, адреса, идентификаторы, тикеры.
-3. Используй ТОЛЬКО канонические термины из глоссария (если предоставлен).
-4. Верни ТОЛЬКО переведенный текст. Без комментариев, пояснений, оберток.
-5. ЗАПРЕЩЕНО дублировать заголовки. Каждый заголовок (#, ##, ###) должен быть РОВНО ОДИН РАЗ.
-6. Если в тексте есть Содержание (Table of Contents) - переведи его ОДИН РАЗ, не дублируй.
-7. НЕ разбивай заголовок на несколько строк. Заголовок = одна строка: "## Глава 1: Название".
-8. Ссылки на изображения ![...](...)  - оставь КАК ЕСТЬ, не переводи alt-text и путь.
+ПРАВИЛА ФОРМАТИРОВАНИЯ (КРИТИЧЕСКИ ВАЖНО):
+
+1. MARKDOWN-СТРУКТУРА: сохрани 1:1 - заголовки (#), списки (-), таблицы (|), code blocks (```), ссылки, изображения.
+2. ЗАГОЛОВКИ: каждый заголовок (#, ##, ###) ровно ОДИН РАЗ, на ОДНОЙ строке. Пример: "## Глава 1: Название".
+   - ЗАПРЕЩЕНО дублировать заголовки.
+   - ЗАПРЕЩЕНО разбивать заголовок на несколько строк.
+3. ТАБЛИЦЫ: сохрани markdown-таблицы как таблицы. Не превращай таблицу в текст. Каждая строка таблицы = строка с |.
+4. ПАРАГРАФЫ: один параграф = один непрерывный блок текста. НЕ разбивай предложения на отдельные строки.
+   - Между параграфами - одна пустая строка.
+   - НЕ добавляй лишних пустых строк.
+   - Длинные предложения НЕ разбивай переносами строк - оставляй одним абзацем.
+5. CODE BLOCKS: НЕ переводи содержимое ``` блоков. Оставь как есть.
+6. URL, идентификаторы, тикеры: НЕ переводи.
+7. Глоссарий: используй ТОЛЬКО канонические термины (если предоставлен).
+{image_rule}
+9. Содержание (Table of Contents): переведи ОДИН РАЗ, не дублируй.
+10. Иерархия: # = заголовок документа, ## = разделы, ### = подразделы. Сохрани уровни.
+
+ФОРМАТ ВЫВОДА:
+- Верни ТОЛЬКО переведенный Markdown. Без комментариев, без преамбулы, без пост-скриптума.
+- Не оборачивай в ```markdown``` блоки.
 
 ---НАЧАЛО ИСХОДНОГО ТЕКСТА---
 
 {source_text}
 
----КОНЕЦ ИСХОДНОГО ТЕКСТА---
-
-Верни ТОЛЬКО перевод. Без преамбулы, без пост-скриптума."""
+---КОНЕЦ ИСХОДНОГО ТЕКСТА---"""
 
 
 def split_into_chunks(text: str, max_chars: int = CHUNK_SIZE_CHARS) -> list[str]:
@@ -824,10 +839,12 @@ def split_into_chunks(text: str, max_chars: int = CHUNK_SIZE_CHARS) -> list[str]
 def translate_text(client, model: str, system_prompt: str,
                    source_text: str, filename: str, lang_pair: str,
                    is_chunk: bool = False, chunk_num: int = 0,
-                   total_chunks: int = 0) -> tuple[str, int, int]:
+                   total_chunks: int = 0,
+                   translate_images: bool = False) -> tuple[str, int, int]:
     """Перевести текст через Claude API."""
     user_prompt = build_user_prompt(source_text, filename, lang_pair,
-                                    is_chunk, chunk_num, total_chunks)
+                                    is_chunk, chunk_num, total_chunks,
+                                    translate_images)
 
     response = client.messages.create(
         model=model,
@@ -841,7 +858,8 @@ def translate_text(client, model: str, system_prompt: str,
 
 
 def translate_document(client, model: str, system_prompt: str,
-                       source_text: str, filename: str, lang_pair: str) -> dict:
+                       source_text: str, filename: str, lang_pair: str,
+                       translate_images: bool = False) -> dict:
     """Перевести один документ (с разбивкой на чанки)."""
     chunks = split_into_chunks(source_text)
 
@@ -871,7 +889,8 @@ def translate_document(client, model: str, system_prompt: str,
             translation, inp_tok, out_tok = translate_text(
                 client, model, system_prompt,
                 chunk, filename, lang_pair,
-                is_chunk=is_chunked, chunk_num=i, total_chunks=len(chunks)
+                is_chunk=is_chunked, chunk_num=i, total_chunks=len(chunks),
+                translate_images=translate_images
             )
             translated_parts.append(translation)
             stats["input_tokens"] += inp_tok
@@ -895,14 +914,14 @@ def translate_document(client, model: str, system_prompt: str,
 
 # Attribution lines by target language
 ATTRIBUTION = {
-    "ru": "Переведено с помощью [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
-    "en": "Translated with [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
-    "de": "Ubersetzt mit [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
-    "es": "Traducido con [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
-    "fr": "Traduit avec [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
-    "zh": "使用 [md-translate-ru](https://github.com/ais-cube/md-translate-ru) 翻译",
-    "ja": "[md-translate-ru](https://github.com/ais-cube/md-translate-ru) で翻訳",
-    "pt": "Traduzido com [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+    "ru": "Переведено с помощью **https://github.com/ais-cube/md-translate-ru**",
+    "en": "Translated with **https://github.com/ais-cube/md-translate-ru**",
+    "de": "Ubersetzt mit **https://github.com/ais-cube/md-translate-ru**",
+    "es": "Traducido con **https://github.com/ais-cube/md-translate-ru**",
+    "fr": "Traduit avec **https://github.com/ais-cube/md-translate-ru**",
+    "zh": "使用 **https://github.com/ais-cube/md-translate-ru** 翻译",
+    "ja": "**https://github.com/ais-cube/md-translate-ru** で翻訳",
+    "pt": "Traduzido com **https://github.com/ais-cube/md-translate-ru**",
 }
 
 
@@ -959,6 +978,123 @@ def get_target_lang_code(lang_pair: str) -> str:
     return lang_pair.split('-')[-1] if '-' in lang_pair else "ru"
 
 
+def cleanup_markdown(text: str) -> str:
+    """Clean up translated markdown: fix line breaks, tables, headings."""
+    lines = text.split('\n')
+    result = []
+    in_code = False
+    in_table = False
+    prev_blank = False
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Toggle code block state
+        if line.strip().startswith('```'):
+            in_code = not in_code
+            result.append(line)
+            prev_blank = False
+            i += 1
+            continue
+
+        # Inside code block - keep as is
+        if in_code:
+            result.append(line)
+            prev_blank = False
+            i += 1
+            continue
+
+        stripped = line.strip()
+
+        # Blank line handling - max one between content
+        if not stripped:
+            if not prev_blank and result:
+                result.append('')
+                prev_blank = True
+            i += 1
+            continue
+
+        prev_blank = False
+
+        # Table lines - keep intact, ensure table continuity
+        if stripped.startswith('|') and stripped.endswith('|'):
+            if not in_table and result and result[-1] != '':
+                result.append('')
+            in_table = True
+            result.append(line)
+            i += 1
+            continue
+        else:
+            if in_table:
+                in_table = False
+                # Don't add blank line if next content will add its own
+                if result and result[-1] != '':
+                    result.append('')
+
+        # Heading - must be single line, ensure blank line before
+        if re.match(r'^#{1,6}\s', stripped):
+            if result and result[-1] != '':
+                result.append('')
+            result.append(line)
+            i += 1
+            continue
+
+        # Horizontal rules
+        if stripped in ('---', '***', '___'):
+            result.append(line)
+            i += 1
+            continue
+
+        # List items - keep as separate lines
+        if re.match(r'^(\s*)([-*+]|\d+\.)\s+', line):
+            result.append(line)
+            i += 1
+            continue
+
+        # Blockquote
+        if stripped.startswith('>'):
+            result.append(line)
+            i += 1
+            continue
+
+        # Image reference
+        if re.match(r'^!\[', stripped):
+            result.append(line)
+            i += 1
+            continue
+
+        # Regular paragraph text - join consecutive non-special lines
+        para_lines = [stripped]
+        j = i + 1
+        while j < len(lines):
+            next_stripped = lines[j].strip()
+            # Stop joining at: blank line, heading, list, table, code, blockquote, hr, image
+            if (not next_stripped
+                or re.match(r'^#{1,6}\s', next_stripped)
+                or re.match(r'^(\s*)([-*+]|\d+\.)\s+', lines[j])
+                or (next_stripped.startswith('|') and next_stripped.endswith('|'))
+                or next_stripped.startswith('```')
+                or next_stripped.startswith('>')
+                or next_stripped in ('---', '***', '___')
+                or re.match(r'^!\[', next_stripped)):
+                break
+            para_lines.append(next_stripped)
+            j += 1
+
+        # Join paragraph into single line
+        paragraph = ' '.join(para_lines)
+        result.append(paragraph)
+        i = j
+        continue
+
+    # Final cleanup: remove trailing blank lines
+    while result and result[-1] == '':
+        result.pop()
+
+    return '\n'.join(result) + '\n'
+
+
 def assemble_document(translations: list[dict], title: str = "",
                       lang_pair: str = "en-ru") -> str:
     """Собрать все переводы в один Markdown-документ."""
@@ -979,6 +1115,9 @@ def assemble_document(translations: list[dict], title: str = "",
 
     # Deduplicate consecutive identical headings/lines
     assembled = dedup_lines(assembled)
+
+    # Clean up markdown formatting
+    assembled = cleanup_markdown(assembled)
 
     return assembled
 
@@ -1030,17 +1169,19 @@ def generate_html(md_text: str, title: str, lang_pair: str = "en-ru") -> str:
             -ms-hyphens: auto;
         }}
         h1 {{
-            font-size: 2em; border-bottom: 3px solid #4361ee;
+            font-size: 2em; font-weight: 700;
+            border-bottom: 3px solid #4361ee;
             padding-bottom: 12px; margin: 40px 0 20px 0;
             line-height: 1.3;
         }}
         h2 {{
-            font-size: 1.5em; border-bottom: 1px solid #dee2e6;
+            font-size: 1.5em; font-weight: 700;
+            border-bottom: 1px solid #dee2e6;
             padding-bottom: 8px; margin: 36px 0 16px 0;
             line-height: 1.3;
         }}
-        h3 {{ font-size: 1.25em; margin: 28px 0 12px 0; line-height: 1.3; }}
-        h4 {{ font-size: 1.1em; margin: 24px 0 10px 0; }}
+        h3 {{ font-size: 1.25em; font-weight: 700; margin: 28px 0 12px 0; line-height: 1.3; }}
+        h4 {{ font-size: 1.1em; font-weight: 700; margin: 24px 0 10px 0; }}
         a {{ color: #4361ee; text-decoration: none; }}
         a:hover {{ text-decoration: underline; }}
         code {{
@@ -1870,27 +2011,26 @@ def main():
             total_images += len(imgs)
             files_with_images += 1
 
-    if total_images > 0 and sys.stdin.isatty():
+    if total_images > 0:
         log(f"  {t('images_found')}: {t('images_count', n=total_images, f=files_with_images)}")
-        if HAS_RICH:
-            translate_alt_text = Confirm.ask(f"  {t('translate_images_q')}", default=False)
-        else:
-            ans = input(f"  {t('translate_images_q')} [y/N]: ").strip().lower()
-            translate_alt_text = ans in ("y", "yes", "д", "да")
+        if sys.stdin.isatty():
+            if HAS_RICH:
+                translate_alt_text = Confirm.ask(f"  {t('translate_images_q')}", default=False)
+            else:
+                ans = input(f"  {t('translate_images_q')} [y/N]: ").strip().lower()
+                translate_alt_text = ans in ("y", "yes", "д", "да")
 
-    if not translate_alt_text:
-        # Update prompt to NOT translate image alt-text (already default in prompt)
-        pass
+    if total_images > 0:
+        if not translate_alt_text:
+            log(f"    -> alt-text: keep original")
+        else:
+            log(f"    -> alt-text: translate")
 
     # ----- STEP 2 -----
     log(t("step_forecast"), "STEP")
 
     glossary = load_json(GLOSSARY_PATH)
     system_prompt = build_system_prompt(lang_pair, glossary)
-
-    # If user allowed translating alt-text, update prompt
-    if translate_alt_text:
-        system_prompt += "\n\nДополнительно: ПЕРЕВОДИ alt-text изображений ![alt](path) - переводи alt, оставляй path."
 
     system_tokens = estimate_tokens(system_prompt)
 
@@ -1952,7 +2092,8 @@ def main():
 
         log(f"  [{i}/{len(input_files)}] {f.name} ({len(text):,} {t('chars')})...")
 
-        stats = translate_document(client, model, system_prompt, text, f.name, lang_pair)
+        stats = translate_document(client, model, system_prompt, text, f.name, lang_pair,
+                                   translate_images=translate_alt_text)
 
         if stats["translated_text"]:
             translations.append(stats)
