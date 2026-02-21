@@ -1,2 +1,5 @@
 anthropic>=0.40.0
 rich>=13.0.0
+fpdf2>=2.8.0
+markdown>=3.5.0
+pymdown-extensions>=10.0

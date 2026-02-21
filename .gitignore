@@ -30,3 +30,11 @@ Thumbs.db
 # Don't ignore these
 !glossary.json
 !glossary_candidates.json
+
+# Generated output
+output/
+docs_ru/
+
+# Fonts - tracked in repo
+!fonts/*.ttf
+!fonts/README.md
