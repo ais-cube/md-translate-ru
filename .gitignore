@@ -32,8 +32,12 @@ Thumbs.db
 !glossary_candidates.json
 
 # Generated output
-output/
+output/*
+!output/.gitkeep
 docs_ru/
+
+# User config (saved language preferences)
+.run_config.json
 
 # Fonts - tracked in repo
 !fonts/*.ttf

@@ -33,6 +33,392 @@ from pathlib import Path
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
+# Config - сохраняется между запусками
+# ---------------------------------------------------------------------------
+ROOT = Path(__file__).resolve().parent
+CONFIG_PATH = ROOT / ".run_config.json"
+
+def load_config() -> dict:
+    defaults = {"ui_lang": None, "last_lang_pair": "en-ru", "last_output_dir": str(ROOT / "output")}
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            defaults.update(saved)
+        except Exception:
+            pass
+    return defaults
+
+def save_config(cfg: dict):
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+_config = load_config()
+
+# ---------------------------------------------------------------------------
+# i18n - двуязычный интерфейс (ru / en)
+# ---------------------------------------------------------------------------
+UI_STRINGS = {
+    # === Общие ===
+    "app_title": {
+        "ru": "md-translate-ru - единый пайплайн перевода документов",
+        "en": "md-translate-ru - unified document translation pipeline",
+    },
+    "app_subtitle": {
+        "ru": "Вход: .md, .docx, .pdf -> Перевод -> Выход: MD + HTML + PDF + DOCX",
+        "en": "Input: .md, .docx, .pdf -> Translate -> Output: MD + HTML + PDF + DOCX",
+    },
+    "choose_ui_lang": {
+        "ru": "Язык интерфейса",
+        "en": "Interface language",
+    },
+    "choice": {
+        "ru": "Выбор",
+        "en": "Choice",
+    },
+
+    # === Проверка зависимостей ===
+    "checking_deps": {
+        "ru": "Проверка зависимостей...",
+        "en": "Checking dependencies...",
+    },
+    "deps_ok": {
+        "ru": "Все зависимости установлены",
+        "en": "All dependencies installed",
+    },
+    "deps_missing": {
+        "ru": "Не установлены пакеты:",
+        "en": "Missing packages:",
+    },
+    "deps_install_hint": {
+        "ru": "Установите командой:",
+        "en": "Install with:",
+    },
+
+    # === Шаги меню ===
+    "step_files": {
+        "ru": "Шаг 1: Входные файлы",
+        "en": "Step 1: Input files",
+    },
+    "step_lang": {
+        "ru": "Шаг 2: Язык перевода",
+        "en": "Step 2: Translation language",
+    },
+    "step_mode": {
+        "ru": "Шаг 3: Режим",
+        "en": "Step 3: Mode",
+    },
+    "step_formats": {
+        "ru": "Шаг 4: Выходные форматы",
+        "en": "Step 4: Output formats",
+    },
+
+    # === Файлы ===
+    "files_found": {
+        "ru": "Найдены файлы:",
+        "en": "Files found:",
+    },
+    "files_not_found": {
+        "ru": "Файлы не найдены автоматически.",
+        "en": "No files found automatically.",
+    },
+    "enter_path": {
+        "ru": "Путь к файлу или папке",
+        "en": "Path to file or folder",
+    },
+    "enter_path_manual": {
+        "ru": "Ввести путь вручную",
+        "en": "Enter path manually",
+    },
+    "select_files": {
+        "ru": "Выберите файлы (номера через запятую, или 'all')",
+        "en": "Select files (numbers separated by comma, or 'all')",
+    },
+    "files_selected": {
+        "ru": "Выбрано файлов",
+        "en": "Files selected",
+    },
+    "no_files": {
+        "ru": "Нет файлов для обработки",
+        "en": "No files to process",
+    },
+    "path_not_found": {
+        "ru": "Путь не найден",
+        "en": "Path not found",
+    },
+
+    # === Язык ===
+    "default_marker": {
+        "ru": "(по умолчанию)",
+        "en": "(default)",
+    },
+
+    # === Режим ===
+    "mode_sync": {
+        "ru": "Перевести сейчас (синхронно)",
+        "en": "Translate now (synchronous)",
+    },
+    "mode_dry": {
+        "ru": "Только оценить стоимость (dry-run)",
+        "en": "Estimate cost only (dry-run)",
+    },
+    "set_budget": {
+        "ru": "Задать лимит бюджета?",
+        "en": "Set budget limit?",
+    },
+    "max_budget": {
+        "ru": "Максимальный бюджет (USD)",
+        "en": "Maximum budget (USD)",
+    },
+
+    # === Форматы ===
+    "fmt_all": {
+        "ru": "Все (MD + HTML + PDF + DOCX)",
+        "en": "All (MD + HTML + PDF + DOCX)",
+    },
+    "fmt_pdf_docx": {
+        "ru": "PDF + DOCX",
+        "en": "PDF + DOCX",
+    },
+    "fmt_pdf_only": {
+        "ru": "Только PDF",
+        "en": "PDF only",
+    },
+    "fmt_docx_only": {
+        "ru": "Только DOCX",
+        "en": "DOCX only",
+    },
+    "fmt_pdf_html": {
+        "ru": "PDF + HTML",
+        "en": "PDF + HTML",
+    },
+    "fmt_md_only": {
+        "ru": "Только MD",
+        "en": "MD only",
+    },
+
+    # === Выход ===
+    "output_name": {
+        "ru": "Имя выходного файла (без расширения)",
+        "en": "Output filename (no extension)",
+    },
+    "output_dir": {
+        "ru": "Выходная папка",
+        "en": "Output folder",
+    },
+
+    # === Пайплайн ===
+    "pipeline_title": {
+        "ru": "ПАЙПЛАЙН ПЕРЕВОДА",
+        "en": "TRANSLATION PIPELINE",
+    },
+    "step_reading": {
+        "ru": "ШАГ 1/4: Чтение входных файлов...",
+        "en": "STEP 1/4: Reading input files...",
+    },
+    "step_forecast": {
+        "ru": "ШАГ 2/4: Прогноз стоимости...",
+        "en": "STEP 2/4: Cost forecast...",
+    },
+    "step_translate": {
+        "ru": "ШАГ 3/4: Перевод...",
+        "en": "STEP 3/4: Translating...",
+    },
+    "step_generate": {
+        "ru": "ШАГ 4/4: Сборка и генерация файлов...",
+        "en": "STEP 4/4: Assembly and file generation...",
+    },
+    "chars": {
+        "ru": "символов",
+        "en": "characters",
+    },
+    "files_label": {
+        "ru": "файлов",
+        "en": "files",
+    },
+    "total": {
+        "ru": "Итого",
+        "en": "Total",
+    },
+    "glossary_terms": {
+        "ru": "Глоссарий: {n} терминов",
+        "en": "Glossary: {n} terms",
+    },
+    "empty_file": {
+        "ru": "Пустой файл или ошибка чтения",
+        "en": "Empty file or read error",
+    },
+    "no_text": {
+        "ru": "Нет текста для перевода",
+        "en": "No text to translate",
+    },
+    "dry_run_note": {
+        "ru": "Это была оценка. Уберите --dry-run для запуска перевода.",
+        "en": "This was an estimate. Remove --dry-run to start translation.",
+    },
+    "confirm_start": {
+        "ru": "Запустить перевод?",
+        "en": "Start translation?",
+    },
+    "cancelled": {
+        "ru": "Отменено.",
+        "en": "Cancelled.",
+    },
+    "direction": {
+        "ru": "Направление",
+        "en": "Direction",
+    },
+    "output_formats": {
+        "ru": "Форматы выхода",
+        "en": "Output formats",
+    },
+    "ctrlc_hint": {
+        "ru": "Ctrl+C - остановить после текущего файла",
+        "en": "Ctrl+C - stop after current file",
+    },
+    "model_label": {
+        "ru": "Модель",
+        "en": "Model",
+    },
+    "api_key_missing": {
+        "ru": "ОШИБКА: установите ANTHROPIC_API_KEY",
+        "en": "ERROR: set ANTHROPIC_API_KEY",
+    },
+    "budget_exhausted": {
+        "ru": "Бюджет исчерпан: ${spent:.2f} / ${budget:.2f}",
+        "en": "Budget exhausted: ${spent:.2f} / ${budget:.2f}",
+    },
+    "stopped_by_user": {
+        "ru": "Остановлено пользователем",
+        "en": "Stopped by user",
+    },
+    "no_translated": {
+        "ru": "Нет переведенных текстов",
+        "en": "No translated texts",
+    },
+    "fonts_missing": {
+        "ru": "Шрифты не найдены в fonts/ - PDF будет пропущен",
+        "en": "Fonts not found in fonts/ - PDF will be skipped",
+    },
+
+    # === Итоги ===
+    "done_title": {
+        "ru": "ГОТОВО",
+        "en": "DONE",
+    },
+    "result_title": {
+        "ru": "Результат",
+        "en": "Result",
+    },
+    "files_translated": {
+        "ru": "Файлов переведено",
+        "en": "Files translated",
+    },
+    "chars_processed": {
+        "ru": "Символов",
+        "en": "Characters",
+    },
+    "tokens_label": {
+        "ru": "Токены",
+        "en": "Tokens",
+    },
+    "cost_label": {
+        "ru": "Стоимость",
+        "en": "Cost",
+    },
+    "time_label": {
+        "ru": "Время",
+        "en": "Time",
+    },
+    "output_folder": {
+        "ru": "Выходная папка",
+        "en": "Output folder",
+    },
+    "error_label": {
+        "ru": "Ошибка",
+        "en": "Error",
+    },
+
+    # === Прогноз ===
+    "forecast_title": {
+        "ru": "Прогноз",
+        "en": "Forecast",
+    },
+    "file_col": {
+        "ru": "Файл",
+        "en": "File",
+    },
+    "chars_col": {
+        "ru": "Символы",
+        "en": "Chars",
+    },
+    "chunks_col": {
+        "ru": "Чанки",
+        "en": "Chunks",
+    },
+    "time_col": {
+        "ru": "Время",
+        "en": "Time",
+    },
+    "price_col": {
+        "ru": "Цена",
+        "en": "Price",
+    },
+
+    # === Interrupt ===
+    "force_exit": {
+        "ru": "Принудительный выход.",
+        "en": "Force exit.",
+    },
+    "ctrlc_stop": {
+        "ru": "Ctrl+C - перевод остановится после текущего файла. Нажмите еще раз для немедленного выхода.",
+        "en": "Ctrl+C - translation will stop after current file. Press again for immediate exit.",
+    },
+
+    # === Время ===
+    "sec": {"ru": "сек", "en": "sec"},
+    "min": {"ru": "мин", "en": "min"},
+    "hour": {"ru": "ч", "en": "h"},
+
+    # === Картинки ===
+    "images_found": {
+        "ru": "Обнаружены изображения в тексте",
+        "en": "Images found in text",
+    },
+    "images_count": {
+        "ru": "{n} изображений в {f} файлах",
+        "en": "{n} images in {f} files",
+    },
+    "translate_images_q": {
+        "ru": "Переводить alt-текст изображений?",
+        "en": "Translate image alt-text?",
+    },
+}
+
+# Current UI language
+_ui_lang = _config.get("ui_lang", "ru")
+
+def t(key: str, **kwargs) -> str:
+    """Get translated UI string."""
+    entry = UI_STRINGS.get(key, {})
+    text = entry.get(_ui_lang, entry.get("ru", key))
+    if kwargs:
+        try:
+            text = text.format(**kwargs)
+        except (KeyError, ValueError):
+            pass
+    return text
+
+def set_ui_lang(lang: str):
+    global _ui_lang
+    _ui_lang = lang
+    _config["ui_lang"] = lang
+    save_config(_config)
+
+# ---------------------------------------------------------------------------
 # Rich / Fallback
 # ---------------------------------------------------------------------------
 try:
@@ -50,9 +436,44 @@ except ImportError:
 console = Console() if HAS_RICH else None
 
 # ---------------------------------------------------------------------------
+# Dependency check
+# ---------------------------------------------------------------------------
+REQUIRED_PACKAGES = {
+    "anthropic": "anthropic>=0.40.0",
+    "pdfplumber": "pdfplumber>=0.10.0",
+    "docx": "python-docx>=1.0.0",
+    "fpdf": "fpdf2>=2.8.0",
+    "markdown": "markdown>=3.5.0",
+}
+
+def check_dependencies() -> list[str]:
+    """Check required packages. Returns list of missing package names."""
+    missing = []
+    for module, pip_name in REQUIRED_PACKAGES.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(pip_name)
+    return missing
+
+def run_dependency_check():
+    """Check and report missing dependencies."""
+    missing = check_dependencies()
+    if not missing:
+        return True
+
+    print(f"\n  {'ОШИБКА' if _ui_lang == 'ru' else 'ERROR'}: {t('deps_missing')}")
+    for pkg in missing:
+        print(f"    - {pkg}")
+    print(f"\n  {t('deps_install_hint')}")
+    print(f"    pip install {' '.join(missing)}")
+    print(f"\n  {'Или все сразу:' if _ui_lang == 'ru' else 'Or install all at once:'}")
+    print(f"    pip install -r requirements.txt\n")
+    sys.exit(1)
+
+# ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent
 FONT_DIR = ROOT / "fonts"
 GLOSSARY_PATH = ROOT / "glossary.json"
 GLOSSARY_CANDIDATES_PATH = ROOT / "glossary_candidates.json"
@@ -97,14 +518,12 @@ _interrupted = False
 def _signal_handler(signum, frame):
     global _interrupted
     if _interrupted:
-        ui_print("\n[bold red]Принудительный выход.[/]" if HAS_RICH else "\nПринудительный выход.")
+        ui_print(f"\n[bold red]{t('force_exit')}[/]" if HAS_RICH else f"\n{t('force_exit')}")
         sys.exit(1)
     _interrupted = True
     ui_print(
-        "\n[yellow]Ctrl+C - перевод остановится после текущего файла. "
-        "Нажмите еще раз для немедленного выхода.[/]"
-        if HAS_RICH else
-        "\nCtrl+C - остановка после текущего файла."
+        f"\n[yellow]{t('ctrlc_stop')}[/]"
+        if HAS_RICH else f"\n{t('ctrlc_stop')}"
     )
 
 signal.signal(signal.SIGINT, _signal_handler)
@@ -157,14 +576,14 @@ def calc_cost(input_tokens: int, output_tokens: int) -> float:
 
 def format_duration(seconds: float) -> str:
     if seconds < 60:
-        return f"{seconds:.0f} сек"
+        return f"{seconds:.0f} {t('sec')}"
     elif seconds < 3600:
         m, s = divmod(int(seconds), 60)
-        return f"{m} мин {s} сек"
+        return f"{m} {t('min')} {s} {t('sec')}"
     else:
         h, rem = divmod(int(seconds), 3600)
         m = rem // 60
-        return f"{h} ч {m} мин"
+        return f"{h} {t('hour')} {m} {t('min')}"
 
 
 def format_size(size_bytes: int) -> str:
@@ -268,6 +687,11 @@ def read_input_file(path: Path) -> tuple[str, str]:
         return "", "unknown"
 
 
+def detect_images(text: str) -> list[tuple[str, str]]:
+    """Find all image references ![alt](path) in Markdown text."""
+    return re.findall(r'!\[([^\]]*)\]\(([^)]+)\)', text)
+
+
 def discover_input_files(input_path: Path) -> list[Path]:
     """Найти все поддерживаемые файлы в указанном пути."""
     if input_path.is_file():
@@ -349,6 +773,10 @@ def build_user_prompt(source_text: str, filename: str, lang_pair: str,
 2. НЕ переводи: code blocks, URL, адреса, идентификаторы, тикеры.
 3. Используй ТОЛЬКО канонические термины из глоссария (если предоставлен).
 4. Верни ТОЛЬКО переведенный текст. Без комментариев, пояснений, оберток.
+5. ЗАПРЕЩЕНО дублировать заголовки. Каждый заголовок (#, ##, ###) должен быть РОВНО ОДИН РАЗ.
+6. Если в тексте есть Содержание (Table of Contents) - переведи его ОДИН РАЗ, не дублируй.
+7. НЕ разбивай заголовок на несколько строк. Заголовок = одна строка: "## Глава 1: Название".
+8. Ссылки на изображения ![...](...)  - оставь КАК ЕСТЬ, не переводи alt-text и путь.
 
 ---НАЧАЛО ИСХОДНОГО ТЕКСТА---
 
@@ -465,70 +893,200 @@ def translate_document(client, model: str, system_prompt: str,
 # STEP 3: Assembly - сборка в один документ
 # ---------------------------------------------------------------------------
 
-def assemble_document(translations: list[dict], title: str = "") -> str:
+# Attribution lines by target language
+ATTRIBUTION = {
+    "ru": "Переведено с помощью [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+    "en": "Translated with [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+    "de": "Ubersetzt mit [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+    "es": "Traducido con [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+    "fr": "Traduit avec [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+    "zh": "使用 [md-translate-ru](https://github.com/ais-cube/md-translate-ru) 翻译",
+    "ja": "[md-translate-ru](https://github.com/ais-cube/md-translate-ru) で翻訳",
+    "pt": "Traduzido com [md-translate-ru](https://github.com/ais-cube/md-translate-ru)",
+}
+
+
+def dedup_lines(text: str) -> str:
+    """Remove consecutive duplicate lines, split headings, and orphaned fragments."""
+    lines = text.split('\n')
+    result = []
+    prev_stripped = None
+    skip_next_if_fragment = None  # text fragment to skip if found on next line
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Skip exact consecutive duplicates (non-empty)
+        if stripped and stripped == prev_stripped:
+            continue
+
+        # Skip orphaned fragment from a split heading
+        if skip_next_if_fragment and stripped == skip_next_if_fragment:
+            skip_next_if_fragment = None
+            continue
+        skip_next_if_fragment = None
+
+        # Handle consecutive heading lines: keep longer, mark fragment for skip
+        if (prev_stripped and stripped
+            and re.match(r'^#{1,6}\s', prev_stripped)
+            and re.match(r'^#{1,6}\s', stripped)):
+            prev_level = re.match(r'^(#{1,6})\s', prev_stripped).group(1)
+            curr_level = re.match(r'^(#{1,6})\s', stripped).group(1)
+            prev_text = re.sub(r'^#{1,6}\s+', '', prev_stripped)
+            curr_text = re.sub(r'^#{1,6}\s+', '', stripped)
+
+            if prev_level == curr_level:
+                if prev_text in curr_text:
+                    # Current is fuller version - replace previous
+                    result[-1] = line
+                    prev_stripped = stripped
+                    continue
+                elif curr_text in prev_text:
+                    # Previous is already fuller - skip this and mark fragment
+                    remainder = prev_text.replace(curr_text, '').strip()
+                    if remainder:
+                        skip_next_if_fragment = remainder
+                    continue
+
+        result.append(line)
+        prev_stripped = stripped
+
+    return '\n'.join(result)
+
+
+def get_target_lang_code(lang_pair: str) -> str:
+    """Extract target language code from pair like 'en-ru' -> 'ru'."""
+    return lang_pair.split('-')[-1] if '-' in lang_pair else "ru"
+
+
+def assemble_document(translations: list[dict], title: str = "",
+                      lang_pair: str = "en-ru") -> str:
     """Собрать все переводы в один Markdown-документ."""
+    target_lang = get_target_lang_code(lang_pair)
+    attribution = ATTRIBUTION.get(target_lang, ATTRIBUTION["en"])
+
     parts = []
 
-    if title:
-        parts.append(f"# {title}\n")
+    # Attribution at the top
+    parts.append(f"> {attribution}\n")
 
-    for i, t in enumerate(translations):
+    for i, tr in enumerate(translations):
         if len(translations) > 1 and i > 0:
             parts.append(f"\n---\n")
-        parts.append(t["translated_text"])
+        parts.append(tr["translated_text"])
 
-    return "\n\n".join(parts)
+    assembled = "\n\n".join(parts)
+
+    # Deduplicate consecutive identical headings/lines
+    assembled = dedup_lines(assembled)
+
+    return assembled
 
 
 # ---------------------------------------------------------------------------
 # STEP 4: Output - генерация всех форматов
 # ---------------------------------------------------------------------------
 
-def generate_html(md_text: str, title: str) -> str:
-    """Markdown -> HTML."""
+def generate_html(md_text: str, title: str, lang_pair: str = "en-ru") -> str:
+    """Markdown -> HTML with proper formatting."""
     import markdown
     extensions = [
         'markdown.extensions.tables',
         'markdown.extensions.fenced_code',
         'markdown.extensions.toc',
         'markdown.extensions.sane_lists',
+        'markdown.extensions.nl2br',
+        'markdown.extensions.smarty',
     ]
     html_content = markdown.markdown(md_text, extensions=extensions)
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    target_lang = get_target_lang_code(lang_pair)
+
+    # Map short code to HTML lang attribute
+    lang_html = {
+        "ru": "ru", "en": "en", "de": "de", "es": "es",
+        "fr": "fr", "zh": "zh", "ja": "ja", "pt": "pt",
+    }.get(target_lang, "en")
 
     return f"""<!DOCTYPE html>
-<html lang="ru">
+<html lang="{lang_html}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
     <style>
+        * {{ box-sizing: border-box; }}
         body {{
             font-family: 'Segoe UI', 'DejaVu Sans', 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.7; color: #1a1a2e; background: #fafbfc;
+            line-height: 1.75; color: #1a1a2e; background: #fafbfc;
             max-width: 860px; margin: 0 auto; padding: 40px 32px;
+            word-wrap: break-word; overflow-wrap: break-word;
         }}
-        h1 {{ font-size: 2em; border-bottom: 3px solid #4361ee; padding-bottom: 12px; margin-top: 40px; }}
-        h2 {{ font-size: 1.5em; border-bottom: 1px solid #dee2e6; padding-bottom: 8px; margin-top: 36px; }}
-        h3 {{ font-size: 1.25em; margin-top: 28px; }}
+        p {{
+            margin: 0 0 1em 0;
+            text-align: justify;
+            hyphens: auto;
+            -webkit-hyphens: auto;
+            -ms-hyphens: auto;
+        }}
+        h1 {{
+            font-size: 2em; border-bottom: 3px solid #4361ee;
+            padding-bottom: 12px; margin: 40px 0 20px 0;
+            line-height: 1.3;
+        }}
+        h2 {{
+            font-size: 1.5em; border-bottom: 1px solid #dee2e6;
+            padding-bottom: 8px; margin: 36px 0 16px 0;
+            line-height: 1.3;
+        }}
+        h3 {{ font-size: 1.25em; margin: 28px 0 12px 0; line-height: 1.3; }}
+        h4 {{ font-size: 1.1em; margin: 24px 0 10px 0; }}
         a {{ color: #4361ee; text-decoration: none; }}
-        code {{ background: #e9ecef; padding: 2px 6px; border-radius: 4px;
-                font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9em; color: #d63384; }}
-        pre {{ background: #1e1e2e; color: #cdd6f4; padding: 20px; border-radius: 8px;
-               overflow-x: auto; line-height: 1.5; margin: 16px 0; }}
-        pre code {{ background: none; color: inherit; padding: 0; }}
+        a:hover {{ text-decoration: underline; }}
+        code {{
+            background: #e9ecef; padding: 2px 6px; border-radius: 4px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9em; color: #d63384;
+            word-break: break-all;
+        }}
+        pre {{
+            background: #1e1e2e; color: #cdd6f4; padding: 20px;
+            border-radius: 8px; overflow-x: auto; line-height: 1.5;
+            margin: 16px 0; white-space: pre-wrap; word-wrap: break-word;
+        }}
+        pre code {{ background: none; color: inherit; padding: 0; word-break: normal; }}
+        ul, ol {{ padding-left: 28px; margin: 8px 0 16px 0; }}
+        li {{ margin: 4px 0; line-height: 1.6; }}
         table {{ border-collapse: collapse; width: 100%; margin: 16px 0; }}
         th, td {{ border: 1px solid #dee2e6; padding: 10px 14px; text-align: left; }}
         th {{ background: #f1f3f5; font-weight: 600; }}
         tr:nth-child(even) {{ background: #f8f9fa; }}
-        blockquote {{ border-left: 4px solid #4361ee; margin: 16px 0;
-                      padding: 12px 20px; background: #eef2ff; }}
-        img {{ max-width: 100%; height: auto; }}
+        blockquote {{
+            border-left: 4px solid #4361ee; margin: 16px 0;
+            padding: 12px 20px; background: #eef2ff;
+            color: #495057; font-style: italic;
+        }}
+        blockquote p {{ margin: 0 0 0.5em 0; }}
+        blockquote p:last-child {{ margin: 0; }}
+        img {{ max-width: 100%; height: auto; margin: 16px 0; display: block; }}
         hr {{ border: none; border-top: 2px solid #dee2e6; margin: 32px 0; }}
-        .meta {{ color: #868e96; font-size: 0.85em; border-top: 1px solid #dee2e6;
-                 padding-top: 16px; margin-top: 48px; }}
-        @media print {{ body {{ max-width: none; padding: 20px; }}
-            pre {{ white-space: pre-wrap; }} }}
+        .meta {{
+            color: #868e96; font-size: 0.85em;
+            border-top: 1px solid #dee2e6;
+            padding-top: 16px; margin-top: 48px;
+        }}
+        @media print {{
+            body {{ max-width: none; padding: 20px; }}
+            pre {{ white-space: pre-wrap; }}
+            a {{ color: #1a1a2e; text-decoration: underline; }}
+        }}
+        @media (max-width: 640px) {{
+            body {{ padding: 16px; }}
+            h1 {{ font-size: 1.6em; }}
+            h2 {{ font-size: 1.3em; }}
+            table {{ font-size: 0.9em; }}
+            th, td {{ padding: 6px 8px; }}
+        }}
     </style>
 </head>
 <body>
@@ -791,7 +1349,8 @@ def generate_docx(md_text: str, output_path: Path, title: str):
 
 
 def generate_outputs(md_text: str, output_dir: Path, base_name: str,
-                     title: str, formats: list[str]) -> dict:
+                     title: str, formats: list[str],
+                     lang_pair: str = "en-ru") -> dict:
     """Сгенерировать все выходные форматы."""
     results = {"files": [], "errors": []}
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -808,7 +1367,7 @@ def generate_outputs(md_text: str, output_dir: Path, base_name: str,
     if "html" in formats:
         try:
             path = output_dir / f"{base_name}.html"
-            html = generate_html(md_text, title)
+            html = generate_html(md_text, title, lang_pair)
             path.write_text(html, encoding="utf-8")
             results["files"].append(("HTML", path))
             log(f"  HTML: {path.name}", "OK")
@@ -875,13 +1434,15 @@ def find_input_candidates() -> list[tuple[Path, int, str]]:
 
 
 def interactive_menu() -> dict:
-    """Полное интерактивное меню."""
+    """Полное интерактивное меню с выбором языка интерфейса."""
+    global _ui_lang
+
     result = {
         "input_files": [],
-        "lang_pair": "en-ru",
+        "lang_pair": _config.get("last_lang_pair", "en-ru"),
         "budget": None,
         "formats": ["md", "html", "pdf", "docx"],
-        "output_dir": ROOT / "output",
+        "output_dir": Path(_config.get("last_output_dir", str(ROOT / "output"))),
         "output_name": "translated",
         "dry_run": False,
         "batch": False,
@@ -889,23 +1450,41 @@ def interactive_menu() -> dict:
     }
 
     if HAS_RICH:
+        # ========== 0. ЯЗЫК ИНТЕРФЕЙСА ==========
+        if _config.get("ui_lang") is None:
+            console.print()
+            console.print("  [bold cyan] 1[/]  Русский")
+            console.print("  [bold cyan] 2[/]  English")
+            console.print()
+            lang_ch = Prompt.ask(t("choose_ui_lang") + " / Interface language",
+                                  choices=["1", "2"], default="1")
+            set_ui_lang("ru" if lang_ch == "1" else "en")
+        else:
+            console.print()
+            saved = "Русский" if _ui_lang == "ru" else "English"
+            console.print(f"  [dim]{t('choose_ui_lang')}: {saved}  (s - switch)[/]")
+            switch = Prompt.ask(t("choice"), default="")
+            if switch.strip().lower() == "s":
+                set_ui_lang("en" if _ui_lang == "ru" else "ru")
+                console.print(f"  [green]{'English' if _ui_lang == 'en' else 'Русский'}[/]")
+
         console.print()
         console.print(Panel(
-            "[bold cyan]md-translate-ru[/] - единый пайплайн перевода документов\n"
-            "[dim]Вход: .md, .docx, .pdf -> Перевод -> Выход: MD + HTML + PDF + DOCX[/]",
+            f"[bold cyan]md-translate-ru[/] - {t('app_title')}\n"
+            f"[dim]{t('app_subtitle')}[/]",
             title="run.py",
             border_style="cyan",
         ))
 
         # ========== 1. ВХОДНЫЕ ФАЙЛЫ ==========
         console.print()
-        console.print(Rule("[bold]Шаг 1: Входные файлы[/]", style="cyan"))
+        console.print(Rule(f"[bold]{t('step_files')}[/]", style="cyan"))
         console.print()
 
         files_found = find_input_candidates()
 
         if files_found:
-            console.print("[bold]Найдены файлы:[/]\n")
+            console.print(f"[bold]{t('files_found')}[/]\n")
             for i, (f, size, ext) in enumerate(files_found, 1):
                 try:
                     rel = f.relative_to(ROOT)
@@ -916,21 +1495,18 @@ def interactive_menu() -> dict:
                 console.print(f"  [bold cyan]{i:2d}[/]  [{c}]{ext:6s}[/]  {rel}  [dim]{format_size(size)}[/]")
 
             console.print()
-            console.print("  [bold cyan] 0[/]  Ввести путь вручную")
+            console.print(f"  [bold cyan] 0[/]  {t('enter_path_manual')}")
             console.print()
 
-            choice = Prompt.ask(
-                "Выберите файлы (номера через запятую, или 'all')",
-                default="all"
-            )
+            choice = Prompt.ask(t("select_files"), default="all")
 
             if choice.strip() == "0":
-                path_str = Prompt.ask("Путь к файлу или папке")
+                path_str = Prompt.ask(t("enter_path"))
                 p = Path(path_str)
                 if p.exists():
                     result["input_files"] = discover_input_files(p)
                 else:
-                    log(f"Путь не найден: {path_str}", "ERROR")
+                    log(f"{t('path_not_found')}: {path_str}", "ERROR")
                     sys.exit(1)
             elif choice.strip().lower() == "all":
                 result["input_files"] = [f[0] for f in files_found]
@@ -947,34 +1523,37 @@ def interactive_menu() -> dict:
                     if 1 <= idx <= len(files_found):
                         result["input_files"].append(files_found[idx - 1][0])
         else:
-            console.print("[yellow]Файлы не найдены автоматически.[/]")
-            path_str = Prompt.ask("Путь к файлу или папке с документами")
+            console.print(f"[yellow]{t('files_not_found')}[/]")
+            path_str = Prompt.ask(t("enter_path"))
             p = Path(path_str)
             if p.exists():
                 result["input_files"] = discover_input_files(p)
             else:
-                log(f"Путь не найден: {path_str}", "ERROR")
+                log(f"{t('path_not_found')}: {path_str}", "ERROR")
                 sys.exit(1)
 
         if not result["input_files"]:
-            log("Нет файлов для обработки", "ERROR")
+            log(t("no_files"), "ERROR")
             sys.exit(1)
 
-        console.print(f"\n  [green]Выбрано файлов: {len(result['input_files'])}[/]")
+        console.print(f"\n  [green]{t('files_selected')}: {len(result['input_files'])}[/]")
 
-        # ========== 2. ЯЗЫК ==========
+        # ========== 2. ЯЗЫК ПЕРЕВОДА ==========
         console.print()
-        console.print(Rule("[bold]Шаг 2: Язык перевода[/]", style="cyan"))
+        console.print(Rule(f"[bold]{t('step_lang')}[/]", style="cyan"))
         console.print()
 
         lang_options = list(LANGUAGES.keys())
+        default_idx = "1"
         for i, lp in enumerate(lang_options, 1):
             _, _, from_en, to_en = LANGUAGES[lp]
-            marker = " [bold green](по умолчанию)[/]" if lp == "en-ru" else ""
+            marker = f" [bold green]({t('default_marker')})[/]" if lp == result["lang_pair"] else ""
+            if lp == result["lang_pair"]:
+                default_idx = str(i)
             console.print(f"  [bold cyan]{i:2d}[/]  {from_en} -> {to_en}  [dim]({lp})[/]{marker}")
 
         console.print()
-        lang_choice = Prompt.ask("Выбор", default="1")
+        lang_choice = Prompt.ask(t("choice"), default=default_idx)
         try:
             idx = int(lang_choice) - 1
             if 0 <= idx < len(lang_options):
@@ -983,31 +1562,34 @@ def interactive_menu() -> dict:
             if lang_choice in LANGUAGES:
                 result["lang_pair"] = lang_choice
 
+        _config["last_lang_pair"] = result["lang_pair"]
+        save_config(_config)
+
         _, _, from_en, to_en = LANGUAGES[result["lang_pair"]]
         console.print(f"  [green]{from_en} -> {to_en}[/]")
 
         # ========== 3. РЕЖИМ ==========
         console.print()
-        console.print(Rule("[bold]Шаг 3: Режим[/]", style="cyan"))
+        console.print(Rule(f"[bold]{t('step_mode')}[/]", style="cyan"))
         console.print()
 
         modes = [
-            ("1", "Перевести сейчас (синхронно)", "sync"),
-            ("2", "Только оценить стоимость (dry-run)", "dry"),
+            ("1", t("mode_sync"), "sync"),
+            ("2", t("mode_dry"), "dry"),
         ]
         for key, label, _ in modes:
             console.print(f"  [bold cyan]{key}[/]  {label}")
         console.print()
 
-        mode_choice = Prompt.ask("Выбор", choices=["1", "2"], default="1")
+        mode_choice = Prompt.ask(t("choice"), choices=["1", "2"], default="1")
         mode = next(m[2] for m in modes if m[0] == mode_choice)
         result["dry_run"] = mode == "dry"
 
         # ========== 4. БЮДЖЕТ ==========
         if not result["dry_run"]:
             console.print()
-            if Confirm.ask("Задать лимит бюджета?", default=False):
-                budget_str = Prompt.ask("Максимальный бюджет (USD)", default="10.00")
+            if Confirm.ask(t("set_budget"), default=False):
+                budget_str = Prompt.ask(t("max_budget"), default="10.00")
                 try:
                     result["budget"] = float(budget_str)
                 except ValueError:
@@ -1015,22 +1597,22 @@ def interactive_menu() -> dict:
 
         # ========== 5. ВЫХОДНЫЕ ФОРМАТЫ ==========
         console.print()
-        console.print(Rule("[bold]Шаг 4: Выходные форматы[/]", style="cyan"))
+        console.print(Rule(f"[bold]{t('step_formats')}[/]", style="cyan"))
         console.print()
 
         fmt_options = [
-            ("1", "Все (MD + HTML + PDF + DOCX)", ["md", "html", "pdf", "docx"]),
-            ("2", "PDF + DOCX", ["pdf", "docx"]),
-            ("3", "Только PDF", ["pdf"]),
-            ("4", "Только DOCX", ["docx"]),
-            ("5", "PDF + HTML", ["pdf", "html"]),
-            ("6", "Только MD", ["md"]),
+            ("1", t("fmt_all"), ["md", "html", "pdf", "docx"]),
+            ("2", t("fmt_pdf_docx"), ["pdf", "docx"]),
+            ("3", t("fmt_pdf_only"), ["pdf"]),
+            ("4", t("fmt_docx_only"), ["docx"]),
+            ("5", t("fmt_pdf_html"), ["pdf", "html"]),
+            ("6", t("fmt_md_only"), ["md"]),
         ]
         for key, label, _ in fmt_options:
             console.print(f"  [bold cyan]{key}[/]  {label}")
         console.print()
 
-        fmt_choice = Prompt.ask("Выбор", choices=[f[0] for f in fmt_options], default="1")
+        fmt_choice = Prompt.ask(t("choice"), choices=[f[0] for f in fmt_options], default="1")
         result["formats"] = next(f[2] for f in fmt_options if f[0] == fmt_choice)
 
         # ========== 6. ВЫХОДНОЕ ИМЯ ==========
@@ -1038,29 +1620,37 @@ def interactive_menu() -> dict:
         default_name = "translated"
         if len(result["input_files"]) == 1:
             default_name = result["input_files"][0].stem + "_translated"
-        result["output_name"] = Prompt.ask("Имя выходного файла (без расширения)",
-                                            default=default_name)
+        result["output_name"] = Prompt.ask(t("output_name"), default=default_name)
 
         # ========== 7. ВЫХОДНАЯ ПАПКА ==========
-        default_out = str(ROOT / "output")
-        out_str = Prompt.ask("Выходная папка", default=default_out)
+        default_out = str(result["output_dir"])
+        out_str = Prompt.ask(t("output_dir"), default=default_out)
         result["output_dir"] = Path(out_str).resolve()
+        _config["last_output_dir"] = str(result["output_dir"])
+        save_config(_config)
 
     else:
         # === Fallback без Rich ===
         print(f"\n{'='*55}")
-        print("md-translate-ru - единый пайплайн перевода")
+        # Language selection
+        if _config.get("ui_lang") is None:
+            print("  1. Русский")
+            print("  2. English")
+            lang_ch = input("Language [1]: ").strip() or "1"
+            set_ui_lang("ru" if lang_ch == "1" else "en")
+
+        print(t("app_title"))
         print(f"{'='*55}")
 
         files_found = find_input_candidates()
         if files_found:
-            print("\nНайдены файлы:")
+            print(f"\n{t('files_found')}")
             for i, (f, size, ext) in enumerate(files_found, 1):
                 print(f"  {i:2d}. [{ext}] {f.name} ({format_size(size)})")
-            print("   0. Ввести путь вручную")
-            choice = input("\nВыбор (номера/all) [all]: ").strip() or "all"
+            print(f"   0. {t('enter_path_manual')}")
+            choice = input(f"\n{t('select_files')} [all]: ").strip() or "all"
             if choice == "0":
-                p = Path(input("Путь: ").strip())
+                p = Path(input(f"{t('enter_path')}: ").strip())
                 result["input_files"] = discover_input_files(p) if p.exists() else []
             elif choice.lower() == "all":
                 result["input_files"] = [f[0] for f in files_found]
@@ -1070,38 +1660,41 @@ def interactive_menu() -> dict:
                     if 1 <= idx <= len(files_found):
                         result["input_files"].append(files_found[idx - 1][0])
         else:
-            p = Path(input("Путь к файлам: ").strip())
+            p = Path(input(f"{t('enter_path')}: ").strip())
             result["input_files"] = discover_input_files(p) if p.exists() else []
 
         if not result["input_files"]:
-            print("Нет файлов!"); sys.exit(1)
+            print(t("no_files")); sys.exit(1)
 
-        print("\nЯзык: 1=EN->RU 2=RU->EN 3=EN->DE 4=EN->ES 5=EN->FR")
+        print(f"\n{t('step_lang')}:")
+        print("  1=EN->RU 2=RU->EN 3=EN->DE 4=EN->ES 5=EN->FR")
         lang_map = {"1": "en-ru", "2": "ru-en", "3": "en-de", "4": "en-es", "5": "en-fr"}
-        result["lang_pair"] = lang_map.get(input("Выбор [1]: ").strip() or "1", "en-ru")
+        result["lang_pair"] = lang_map.get(input(f"{t('choice')} [1]: ").strip() or "1", "en-ru")
 
-        print("\nРежим: 1=перевод 2=dry-run")
-        mode = input("Выбор [1]: ").strip() or "1"
+        print(f"\n{t('step_mode')}:")
+        print(f"  1={t('mode_sync')} 2={t('mode_dry')}")
+        mode = input(f"{t('choice')} [1]: ").strip() or "1"
         result["dry_run"] = mode == "2"
 
-        b = input("Бюджет USD (Enter=без лимита): ").strip()
+        b = input(f"{t('max_budget')} (Enter=no limit): ").strip()
         if b:
             try: result["budget"] = float(b)
             except ValueError: pass
 
-        print("\nФорматы: 1=все 2=PDF+DOCX 3=PDF 4=DOCX 5=MD")
+        print(f"\n{t('step_formats')}:")
+        print(f"  1={t('fmt_all')} 2={t('fmt_pdf_docx')} 3={t('fmt_pdf_only')} 4={t('fmt_docx_only')} 5={t('fmt_md_only')}")
         fmt_map = {"1": ["md","html","pdf","docx"], "2": ["pdf","docx"],
                    "3": ["pdf"], "4": ["docx"], "5": ["md"]}
-        result["formats"] = fmt_map.get(input("Выбор [1]: ").strip() or "1",
+        result["formats"] = fmt_map.get(input(f"{t('choice')} [1]: ").strip() or "1",
                                          ["md","html","pdf","docx"])
 
         default_name = "translated"
         if len(result["input_files"]) == 1:
             default_name = result["input_files"][0].stem + "_translated"
-        result["output_name"] = input(f"Имя файла [{default_name}]: ").strip() or default_name
+        result["output_name"] = input(f"{t('output_name')} [{default_name}]: ").strip() or default_name
 
         result["output_dir"] = Path(
-            input(f"Выходная папка [{ROOT / 'output'}]: ").strip() or str(ROOT / "output")
+            input(f"{t('output_dir')} [{ROOT / 'output'}]: ").strip() or str(ROOT / "output")
         ).resolve()
 
     return result
@@ -1131,13 +1724,13 @@ def show_forecast(input_files: list[Path], texts: list[str], system_tokens: int,
     total_chars = sum(fc["chars"] for fc in forecasts)
 
     if HAS_RICH:
-        table = Table(title="Прогноз", box=box.ROUNDED, show_lines=True, title_style="bold cyan")
+        table = Table(title=t("forecast_title"), box=box.ROUNDED, show_lines=True, title_style="bold cyan")
         table.add_column("#", style="dim", width=4, justify="right")
-        table.add_column("Файл", style="bold white", max_width=30)
-        table.add_column("Символы", justify="right", style="cyan")
-        table.add_column("Чанки", justify="center")
-        table.add_column("Время", justify="right", style="yellow")
-        table.add_column("Цена", justify="right", style="green")
+        table.add_column(t("file_col"), style="bold white", max_width=30)
+        table.add_column(t("chars_col"), justify="right", style="cyan")
+        table.add_column(t("chunks_col"), justify="center")
+        table.add_column(t("time_col"), justify="right", style="yellow")
+        table.add_column(t("price_col"), justify="right", style="green")
 
         for i, fc in enumerate(forecasts, 1):
             table.add_row(str(i), fc["name"], f"{fc['chars']:,}",
@@ -1148,20 +1741,23 @@ def show_forecast(input_files: list[Path], texts: list[str], system_tokens: int,
         budget_note = ""
         if budget is not None:
             r = budget - total_cost
-            budget_note = (f"  [green]бюджет ${budget:.2f}, остаток ${r:.2f}[/]" if r >= 0
-                           else f"  [red]бюджет ${budget:.2f}, не хватает ${-r:.2f}[/]")
+            budget_lbl = "budget" if _ui_lang == "en" else "бюджет"
+            remain_lbl = "remaining" if _ui_lang == "en" else "остаток"
+            short_lbl = "short" if _ui_lang == "en" else "не хватает"
+            budget_note = (f"  [green]{budget_lbl} ${budget:.2f}, {remain_lbl} ${r:.2f}[/]" if r >= 0
+                           else f"  [red]{budget_lbl} ${budget:.2f}, {short_lbl} ${-r:.2f}[/]")
 
-        table.add_row("", f"[bold]ИТОГО: {len(forecasts)} файлов[/]", f"[bold]{total_chars:,}[/]",
+        table.add_row("", f"[bold]{t('total').upper()}: {len(forecasts)} {t('files_label')}[/]", f"[bold]{total_chars:,}[/]",
                        "", f"[bold]{format_duration(total_time)}[/]",
                        f"[bold]${total_cost:.2f}[/]" + budget_note)
         console.print()
         console.print(table)
         console.print()
     else:
-        print(f"\nПРОГНОЗ: {len(forecasts)} файлов, {total_chars:,} символов")
-        print(f"Время: {format_duration(total_time)}, Цена: ${total_cost:.2f}")
+        print(f"\n{t('forecast_title').upper()}: {len(forecasts)} {t('files_label')}, {total_chars:,} {t('chars')}")
+        print(f"{t('time_col')}: {format_duration(total_time)}, {t('price_col')}: ${total_cost:.2f}")
         if budget is not None:
-            print(f"Бюджет: ${budget:.2f}")
+            print(f"Budget: ${budget:.2f}")
         print()
 
     return forecasts
@@ -1173,18 +1769,25 @@ def show_forecast(input_files: list[Path], texts: list[str], system_tokens: int,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Единый пайплайн: документ -> перевод -> все форматы",
+        description="Unified pipeline: document -> translate -> all formats",
     )
-    parser.add_argument("--input", help="Файл или папка для перевода")
-    parser.add_argument("--lang", default=None, help="Языковая пара (en-ru, en-de, ...)")
-    parser.add_argument("--budget", type=float, default=None, help="Лимит бюджета USD")
-    parser.add_argument("--format", default=None, help="Форматы: all, pdf, docx, html, md")
-    parser.add_argument("--output", default=None, help="Имя выходного файла")
-    parser.add_argument("--output-dir", default=None, help="Выходная папка")
-    parser.add_argument("--dry-run", action="store_true", help="Только оценить стоимость")
-    parser.add_argument("--model", default=None, help="Модель Claude")
-    parser.add_argument("--no-interactive", action="store_true", help="Без интерактивного меню")
+    parser.add_argument("--input", help="File or folder to translate")
+    parser.add_argument("--lang", default=None, help="Language pair (en-ru, en-de, ...)")
+    parser.add_argument("--budget", type=float, default=None, help="Budget limit USD")
+    parser.add_argument("--format", default=None, help="Formats: all, pdf, docx, html, md")
+    parser.add_argument("--output", default=None, help="Output filename")
+    parser.add_argument("--output-dir", default=None, help="Output folder")
+    parser.add_argument("--dry-run", action="store_true", help="Estimate cost only")
+    parser.add_argument("--model", default=None, help="Claude model")
+    parser.add_argument("--no-interactive", action="store_true", help="No interactive menu")
+    parser.add_argument("--ui-lang", default=None, choices=["ru", "en"], help="Interface language")
     args = parser.parse_args()
+
+    # === Проверка зависимостей (после --help) ===
+    run_dependency_check()
+
+    if args.ui_lang:
+        set_ui_lang(args.ui_lang)
 
     is_interactive = (
         not args.no_interactive
@@ -1196,7 +1799,7 @@ def main():
         config = interactive_menu()
     else:
         if not args.input:
-            log("Укажите --input или запустите без аргументов для интерактивного режима", "ERROR")
+            log(t("no_files"), "ERROR")
             sys.exit(1)
 
         input_path = Path(args.input)
@@ -1235,10 +1838,10 @@ def main():
 
     if HAS_RICH:
         console.print()
-        console.print(Rule("[bold magenta]ПАЙПЛАЙН ПЕРЕВОДА[/]", style="magenta"))
+        console.print(Rule(f"[bold magenta]{t('pipeline_title')}[/]", style="magenta"))
 
-    # ----- ШАГ 1: Чтение -----
-    log("ШАГ 1/4: Чтение входных файлов...", "STEP")
+    # ----- STEP 1 -----
+    log(t("step_reading"), "STEP")
 
     source_texts = []
     for f in input_files:
@@ -1246,66 +1849,87 @@ def main():
         text, fmt = read_input_file(f)
         if text.strip():
             source_texts.append(text)
-            log(f"    {len(text):,} символов", "OK")
+            log(f"    {len(text):,} {t('chars')}", "OK")
         else:
-            log(f"    Пустой файл или ошибка чтения", "WARN")
+            log(f"    {t('empty_file')}", "WARN")
 
     if not source_texts:
-        log("Нет текста для перевода", "ERROR")
+        log(t("no_text"), "ERROR")
         return
 
-    total_chars = sum(len(t) for t in source_texts)
-    log(f"  Итого: {len(source_texts)} файлов, {total_chars:,} символов")
+    total_chars = sum(len(tx) for tx in source_texts)
+    log(f"  {t('total')}: {len(source_texts)} {t('files_label')}, {total_chars:,} {t('chars')}")
 
-    # ----- ШАГ 2: Прогноз -----
-    log("ШАГ 2/4: Прогноз стоимости...", "STEP")
+    # ----- IMAGE DETECTION -----
+    translate_alt_text = False
+    total_images = 0
+    files_with_images = 0
+    for txt in source_texts:
+        imgs = detect_images(txt)
+        if imgs:
+            total_images += len(imgs)
+            files_with_images += 1
+
+    if total_images > 0 and sys.stdin.isatty():
+        log(f"  {t('images_found')}: {t('images_count', n=total_images, f=files_with_images)}")
+        if HAS_RICH:
+            translate_alt_text = Confirm.ask(f"  {t('translate_images_q')}", default=False)
+        else:
+            ans = input(f"  {t('translate_images_q')} [y/N]: ").strip().lower()
+            translate_alt_text = ans in ("y", "yes", "д", "да")
+
+    if not translate_alt_text:
+        # Update prompt to NOT translate image alt-text (already default in prompt)
+        pass
+
+    # ----- STEP 2 -----
+    log(t("step_forecast"), "STEP")
 
     glossary = load_json(GLOSSARY_PATH)
     system_prompt = build_system_prompt(lang_pair, glossary)
+
+    # If user allowed translating alt-text, update prompt
+    if translate_alt_text:
+        system_prompt += "\n\nДополнительно: ПЕРЕВОДИ alt-text изображений ![alt](path) - переводи alt, оставляй path."
+
     system_tokens = estimate_tokens(system_prompt)
 
     if glossary:
-        log(f"  Глоссарий: {len(glossary)} терминов")
+        log(f"  {t('glossary_terms', n=len(glossary))}")
 
     forecasts = show_forecast(input_files, source_texts, system_tokens, config["budget"])
 
     if config["dry_run"]:
-        ui_print("[dim]Это была оценка. Уберите --dry-run для запуска перевода.[/]"
-                 if HAS_RICH else "Это была оценка.")
+        ui_print(f"[dim]{t('dry_run_note')}[/]" if HAS_RICH else t("dry_run_note"))
         return
 
     total_cost = sum(fc["est_cost"] for fc in forecasts)
     if HAS_RICH:
-        console.print(f"  Направление: [bold]{from_en} -> {to_en}[/]")
-        console.print(f"  Форматы выхода: [bold]{', '.join(f.upper() for f in config['formats'])}[/]")
-        console.print(f"  [dim]Ctrl+C - остановить после текущего файла[/]")
-        if not Confirm.ask("\nЗапустить перевод?", default=True):
-            ui_print("[dim]Отменено.[/]")
+        console.print(f"  {t('direction')}: [bold]{from_en} -> {to_en}[/]")
+        console.print(f"  {t('output_formats')}: [bold]{', '.join(f.upper() for f in config['formats'])}[/]")
+        console.print(f"  [dim]{t('ctrlc_hint')}[/]")
+        if not Confirm.ask(f"\n{t('confirm_start')}", default=True):
+            ui_print(f"[dim]{t('cancelled')}[/]")
             return
     else:
-        answer = input("Запустить? [Y/n]: ").strip().lower()
+        answer = input(f"{t('confirm_start')} [Y/n]: ").strip().lower()
         if answer not in ("", "y", "yes", "д", "да"):
             return
 
-    # ----- ШАГ 3: Перевод -----
-    log("ШАГ 3/4: Перевод...", "STEP")
+    # ----- STEP 3 -----
+    log(t("step_translate"), "STEP")
 
     model = config.get("model") or os.getenv("TRANSLATE_MODEL", DEFAULT_MODEL)
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        log("ОШИБКА: установите ANTHROPIC_API_KEY", "ERROR")
+        log(t("api_key_missing"), "ERROR")
         log("  export ANTHROPIC_API_KEY='sk-ant-...'")
         sys.exit(1)
 
-    try:
-        import anthropic
-    except ImportError:
-        log("ОШИБКА: pip install anthropic", "ERROR")
-        sys.exit(1)
-
+    import anthropic
     client = anthropic.Anthropic(api_key=api_key)
-    log(f"  Модель: {model}")
-    log(f"  Направление: {from_en} -> {to_en}")
+    log(f"  {t('model_label')}: {model}")
+    log(f"  {t('direction')}: {from_en} -> {to_en}")
 
     translations = []
     total_stats = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "errors": 0}
@@ -1314,19 +1938,19 @@ def main():
 
     for i, (f, text) in enumerate(zip(input_files, source_texts), 1):
         if _interrupted:
-            log("Остановлено пользователем", "WARN")
+            log(t("stopped_by_user"), "WARN")
             break
 
         if config["budget"] is not None:
             fc = forecasts[i - 1]
             if spent + fc["est_cost"] > config["budget"]:
-                log(f"Бюджет исчерпан: ${spent:.2f} / ${config['budget']:.2f}", "WARN")
+                log(t("budget_exhausted", spent=spent, budget=config["budget"]), "WARN")
                 break
 
         if HAS_RICH:
             console.print(Rule(f"[bold]{f.name}[/]", style="cyan"))
 
-        log(f"  [{i}/{len(input_files)}] {f.name} ({len(text):,} символов)...")
+        log(f"  [{i}/{len(input_files)}] {f.name} ({len(text):,} {t('chars')})...")
 
         stats = translate_document(client, model, system_prompt, text, f.name, lang_pair)
 
@@ -1338,21 +1962,21 @@ def main():
             log(f"    {stats['input_tokens']:,} in + {stats['output_tokens']:,} out = ${stats['cost']:.2f}", "OK")
         else:
             total_stats["errors"] += 1
-            log(f"    Ошибка: {stats['status']}", "ERROR")
+            log(f"    {t('error_label')}: {stats['status']}", "ERROR")
 
         if i < len(input_files):
             time.sleep(2)
 
     if not translations:
-        log("Нет переведенных текстов", "ERROR")
+        log(t("no_translated"), "ERROR")
         return
 
     elapsed = time.time() - start_time
 
-    # ----- ШАГ 4: Сборка и генерация -----
-    log("ШАГ 4/4: Сборка и генерация файлов...", "STEP")
+    # ----- STEP 4 -----
+    log(t("step_generate"), "STEP")
 
-    assembled_md = assemble_document(translations)
+    assembled_md = assemble_document(translations, lang_pair=lang_pair)
 
     output_dir = config["output_dir"]
     base_name = config["output_name"]
@@ -1362,46 +1986,46 @@ def main():
 
     if "pdf" in config["formats"]:
         if not (FONT_DIR / "DejaVuSans.ttf").exists():
-            log("Шрифты не найдены в fonts/ - PDF будет пропущен", "WARN")
+            log(t("fonts_missing"), "WARN")
             config["formats"] = [f for f in config["formats"] if f != "pdf"]
 
     gen_results = generate_outputs(assembled_md, output_dir, base_name,
-                                    title, config["formats"])
+                                    title, config["formats"], lang_pair)
 
     # ========================
-    # ИТОГИ
+    # RESULTS
     # ========================
     total_cost_actual = calc_cost(total_stats["input_tokens"], total_stats["output_tokens"])
 
     if HAS_RICH:
         console.print()
-        console.print(Rule("[bold green]ГОТОВО[/]", style="green"))
+        console.print(Rule(f"[bold green]{t('done_title')}[/]", style="green"))
         console.print()
 
         summary = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
         summary.add_column("Key", style="dim")
         summary.add_column("Value", style="bold")
 
-        summary.add_row("Файлов переведено", f"{len(translations)} / {len(input_files)}")
-        summary.add_row("Направление", f"{from_en} -> {to_en}")
-        summary.add_row("Символов", f"{sum(t['source_chars'] for t in translations):,}")
-        summary.add_row("Токены", f"{total_stats['input_tokens']:,} in + {total_stats['output_tokens']:,} out")
-        summary.add_row("Стоимость", f"${total_cost_actual:.2f}")
-        summary.add_row("Время", format_duration(elapsed))
+        summary.add_row(t("files_translated"), f"{len(translations)} / {len(input_files)}")
+        summary.add_row(t("direction"), f"{from_en} -> {to_en}")
+        summary.add_row(t("chars_processed"), f"{sum(tx['source_chars'] for tx in translations):,}")
+        summary.add_row(t("tokens_label"), f"{total_stats['input_tokens']:,} in + {total_stats['output_tokens']:,} out")
+        summary.add_row(t("cost_label"), f"${total_cost_actual:.2f}")
+        summary.add_row(t("time_label"), format_duration(elapsed))
         summary.add_row("", "")
-        summary.add_row("Выходная папка", str(output_dir))
+        summary.add_row(t("output_folder"), str(output_dir))
         for fmt, path in gen_results["files"]:
             summary.add_row(f"  {fmt}", path.name)
 
         if gen_results["errors"]:
             for err in gen_results["errors"]:
-                summary.add_row("[red]Ошибка[/]", err)
+                summary.add_row(f"[red]{t('error_label')}[/]", err)
 
-        console.print(Panel(summary, title="Результат", border_style="green"))
+        console.print(Panel(summary, title=t("result_title"), border_style="green"))
     else:
         print(f"\n{'='*55}")
-        print(f"ГОТОВО: {len(translations)} файлов, ${total_cost_actual:.2f}, {format_duration(elapsed)}")
-        print(f"Файлы: {output_dir}/")
+        print(f"{t('done_title')}: {len(translations)} {t('files_label')}, ${total_cost_actual:.2f}, {format_duration(elapsed)}")
+        print(f"{t('output_folder')}: {output_dir}/")
         for fmt, path in gen_results["files"]:
             print(f"  {fmt}: {path.name}")
         print()
