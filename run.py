@@ -432,6 +432,14 @@ UI_STRINGS = {
         "ru": "ID папки (из URL)",
         "en": "Folder ID (from URL)",
     },
+    "gdocs_folder_name": {
+        "ru": "Название для запоминания",
+        "en": "Name to remember it by",
+    },
+    "gdocs_folder_saved": {
+        "ru": "Папка сохранена",
+        "en": "Folder saved",
+    },
     "gdocs_uploading": {
         "ru": "Загрузка в Google Docs",
         "en": "Uploading to Google Docs",
@@ -1931,47 +1939,127 @@ def _list_gdocs_folders(service) -> list[dict]:
         return []
 
 
+def _get_saved_gdocs_folders() -> list[dict]:
+    """Load saved Google Drive folders from config. Returns [{name, id}, ...]."""
+    return _config.get("gdocs_saved_folders", [])
+
+
+def _save_gdocs_folder(name: str, folder_id: str):
+    """Save a Google Drive folder to config for future use."""
+    saved = _config.get("gdocs_saved_folders", [])
+    # Don't duplicate
+    for f in saved:
+        if f["id"] == folder_id:
+            return
+    saved.append({"name": name, "id": folder_id})
+    _config["gdocs_saved_folders"] = saved
+    save_config(_config)
+
+
 def ask_gdocs_folder(service) -> str | None:
-    """Interactive folder selection. Returns folder_id or None for root."""
+    """Interactive folder selection with saved favorites. Returns folder_id or None for root."""
+    saved = _get_saved_gdocs_folders()
     folders = _list_gdocs_folders(service)
+
+    # Build menu items: [("key", "label", folder_id_or_None)]
+    idx = 0
 
     if HAS_RICH:
         console.print()
         console.print(f"  [bold cyan]{t('gdocs_folder_q')}[/]")
         console.print()
-        console.print(f"  [bold cyan] 0[/]  [green]{t('gdocs_root')}[/]  (My Drive)")
-        console.print(f"  [bold cyan] 1[/]  [yellow]{t('gdocs_manual_id')}[/]")
-        for i, f in enumerate(folders, 2):
-            console.print(f"  [bold cyan]{i:2d}[/]  {f['name']}")
+        console.print(f"  [bold cyan] {idx}[/]  [green]{t('gdocs_root')}[/]  (My Drive)")
+        idx += 1
+        console.print(f"  [bold cyan] {idx}[/]  [yellow]{t('gdocs_manual_id')}[/]")
+        idx += 1
+
+        # Saved folders (starred)
+        saved_start = idx
+        if saved:
+            for f in saved:
+                console.print(f"  [bold cyan]{idx:2d}[/]  [bold yellow]*[/] {f['name']}  [dim]{f['id'][:12]}...[/]")
+                idx += 1
+
+        # Drive folders
+        drive_start = idx
+        for f in folders:
+            # Skip if already in saved
+            if any(s["id"] == f["id"] for s in saved):
+                continue
+            console.print(f"  [bold cyan]{idx:2d}[/]  {f['name']}")
+            idx += 1
+
         console.print()
-        choice = Prompt.ask(t("choice"), default="0")
+        default = str(saved_start) if saved else "0"
+        choice = Prompt.ask(t("choice"), default=default)
     else:
         print(f"\n  {t('gdocs_folder_q')}")
         print(f"  0 = {t('gdocs_root')} (My Drive)")
         print(f"  1 = {t('gdocs_manual_id')}")
-        for i, f in enumerate(folders, 2):
-            print(f"  {i} = {f['name']}")
-        choice = input(f"\n  {t('choice')} [0]: ").strip() or "0"
 
-    if choice == "0":
+        saved_start = 2
+        if saved:
+            for i, f in enumerate(saved, saved_start):
+                print(f"  {i} = * {f['name']}  ({f['id'][:12]}...)")
+                idx = i + 1
+        else:
+            idx = saved_start
+
+        drive_start = idx
+        drive_filtered = [f for f in folders if not any(s["id"] == f["id"] for s in saved)]
+        for i, f in enumerate(drive_filtered, drive_start):
+            print(f"  {i} = {f['name']}")
+
+        default = str(saved_start) if saved else "0"
+        choice = input(f"\n  {t('choice')} [{default}]: ").strip() or default
+
+    # Parse choice
+    try:
+        ch = int(choice)
+    except ValueError:
+        return None
+
+    if ch == 0:
         return None  # root
 
-    if choice == "1":
+    if ch == 1:
         # Manual folder ID
         if HAS_RICH:
             folder_id = Prompt.ask(f"  {t('gdocs_enter_id')}")
+            folder_name = Prompt.ask(f"  {t('gdocs_folder_name')}", default="")
         else:
             folder_id = input(f"  {t('gdocs_enter_id')}: ").strip()
-        return folder_id.strip() if folder_id.strip() else None
+            folder_name = input(f"  {t('gdocs_folder_name')} []: ").strip()
 
-    try:
-        idx = int(choice)
-        if 2 <= idx < 2 + len(folders):
-            selected = folders[idx - 2]
-            log(f"  -> {selected['name']}", "OK")
-            return selected["id"]
-    except (ValueError, IndexError):
-        pass
+        folder_id = folder_id.strip()
+        if not folder_id:
+            return None
+
+        # Save for future use
+        if folder_name:
+            _save_gdocs_folder(folder_name, folder_id)
+            log(f"  {t('gdocs_folder_saved')}: {folder_name}", "OK")
+        else:
+            _save_gdocs_folder(f"Folder {folder_id[:8]}", folder_id)
+
+        return folder_id
+
+    # Saved folder
+    if saved and saved_start <= ch < saved_start + len(saved):
+        selected = saved[ch - saved_start]
+        log(f"  -> * {selected['name']}", "OK")
+        return selected["id"]
+
+    # Drive folder
+    drive_filtered = [f for f in folders if not any(s["id"] == f["id"] for s in saved)]
+    drive_idx = ch - (saved_start + len(saved))
+    if 0 <= drive_idx < len(drive_filtered):
+        selected = drive_filtered[drive_idx]
+        log(f"  -> {selected['name']}", "OK")
+        # Auto-save for next time
+        _save_gdocs_folder(selected["name"], selected["id"])
+        log(f"  {t('gdocs_folder_saved')}: {selected['name']}", "OK")
+        return selected["id"]
 
     return None  # fallback to root
 
